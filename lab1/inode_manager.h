@@ -67,7 +67,11 @@ class block_manager {
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 
-#define BLOCK_USAGE_STATE(c, p) ((c>>p)&1)
+#define BIT_STATE(c, p) ((c>>p)&1)
+// get the index of the byte which store the usage info of block id
+#define BLOCK_BITMAP_INDEX(id) (((id) % BPB) / 8)
+// get the offset of block id in the byte which store the usage info of it
+#define BLOCK_BITMAP_OFFSET(id) (7 - ((id) % BPB) % 8)
 
 typedef struct inode {
   //short type;

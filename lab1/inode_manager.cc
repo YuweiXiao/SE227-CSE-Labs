@@ -54,18 +54,16 @@ block_manager::alloc_block()
   blockid_t bnum = 2 + sb.nblocks / BPB + sb.ninodes / IPB;
   while(bnum < sb.nblocks) {
     read_block(BBLOCK(bnum), buf);
-    uint32_t index = (bnum % BPB) / 8;
-    // this offset is from right to left [7,6,5,4,3,2,1,0]
-    uint32_t offset = 7 - (bnum % BPB) % 8; 
-
-    if(BLOCK_USAGE_STATE(buf[index], offset) == 0) {
+    uint32_t index = BLOCK_BITMAP_INDEX(bnum);
+    uint32_t offset = BLOCK_BITMAP_OFFSET(bnum); 
+    if(BIT_STATE(buf[index], offset) == 0) {
       buf[index] = (buf[index] | (1 << offset));
       write_block(BBLOCK(bnum), buf);
       return bnum;
     }
     bnum++;
   }
-  printf("no more storage.\n");
+  printf("block_manager::alloc_block::no more storage.\n");
   return -1;
 }
 
@@ -88,19 +86,18 @@ block_manager::free_block(uint32_t id)
    * note: you should unmark the corresponding bit in the block bitmap when free.
    */
   if(id < 0 || id > sb.nblocks) {
+    printf("block_manager::free_bloc::block id is out of range:%u\n", id);
     return;
   }
   
   char buf[BLOCK_SIZE];
-  
+
   // unmark bitmap
   read_block(BBLOCK(id), buf);
-  uint32_t index = (id % BPB) / 8;
-  uint32_t offset = 8 - (id % BPB) % 8;
-  // printf("block_manager::free_block id:%u  index:%u  offset:%u \n", id, index, offset);
-  // printf("before:"); printBit(buf[index]);
+  uint32_t index = BLOCK_BITMAP_INDEX(id);
+  uint32_t offset = BLOCK_BITMAP_OFFSET(id);
   buf[index] = (buf[index] & (~(1 << offset)));
-  // printf("after\n"); printBit(buf[index]);
+  // update bitmap
   write_block(BBLOCK(id), buf);
 }
 
@@ -153,39 +150,59 @@ inode_manager::alloc_inode(uint32_t type)
   
    * if you get some heap memory, do not forget to free it.
    */
+  
+  //TODO, type check
+
   struct inode *ino_disk;
   char buf[BLOCK_SIZE];
 
-  // find free block for new inode to allocate
-  bm->read_block(BBLOCK(0), buf);
-  int p = 1;
-  int inum = -1;
-  for(int i = 0; i < BLOCK_SIZE && p <= INODE_NUM && inum == -1; ++i) {
-    for(int j = 7; j >= 0 && p <= INODE_NUM && inum == -1; --j) {
-      if(BLOCK_USAGE_STATE(buf[i], j) == 0) {
-        inum = p;
-        buf[i] = buf[i] | (1<<j);
-        break;
-      } 
-      p++;
+  // start from 1 root_dir
+  int inum = 1;
+  while(inum <= INODE_NUM) {
+    bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
+    ino_disk = (struct inode*)buf + inum%IPB;
+    if(ino_disk->type == 0) {
+      // TODO: update xtime
+      ino_disk->type = type;
+      bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
+      return inum;
     }
+    inum++;
   }
-  // no free block for new inode
-  if(inum == -1) {
-    printf("no block for inode to allocate\n");
-    return -1;
-  }
-  
-  // update bitmap
-  bm->write_block(BBLOCK(0), buf);
 
-  // get the inode block, update attr.  
-  // TODO: update xtime
-  bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  ino_disk = (struct inode*)buf + inum%IPB;
-  ino_disk->type = type;
-  bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  return inum;
+  // no more inode available.
+  printf("no block for inode to allocate\n");
+  return -1;
+  // find free block for new inode to allocate
+  // bm->read_block(BBLOCK(0), buf);
+  // int p = 1;
+  // int inum = -1;
+  // for(int i = 0; i < BLOCK_SIZE && p <= INODE_NUM && inum == -1; ++i) {
+  //   for(int j = 7; j >= 0 && p <= INODE_NUM && inum == -1; --j) {
+  //     if(BIT_STATE(buf[i], j) == 0) {
+  //       inum = p;
+  //       buf[i] = buf[i] | (1<<j);
+  //       break;
+  //     } 
+  //     p++;
+  //   }
+  // }
+  // // no free block for new inode
+  // if(inum == -1) {
+  //   printf("no block for inode to allocate\n");
+  //   return -1;
+  // }
+  
+  // // update bitmap
+  // bm->write_block(BBLOCK(0), buf);
+
+  // // get the inode block, update attr.  
+  // // TODO: update xtime
+  // bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
+  // ino_disk = (struct inode*)buf + inum%IPB;
+  // ino_disk->type = type;
+  // bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
+  // return inum;
 }
 
 void
@@ -197,7 +214,11 @@ inode_manager::free_inode(uint32_t inum)
    * if not, clear it, and remember to write back to disk.
    * do not forget to free memory if necessary.
    */
-  
+  if (inum < 0 || inum >= bm->sb.ninodes) {
+    printf("inode_manager::free_inode: inum out of range:%u\n", inum);
+    return ;
+  }
+
   // clear block data
   char buf[BLOCK_SIZE];
   memset(buf, 0, BLOCK_SIZE);
@@ -214,7 +235,7 @@ inode_manager::get_inode(uint32_t inum)
 {
   printf("\tim: get_inode %d\n", inum);
   
-  if (inum < 0 || inum >= INODE_NUM) {
+  if (inum < 0 || inum >= bm->sb.ninodes) {
     printf("\tim: inum out of range\n");
     return NULL;
   }
@@ -267,17 +288,18 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
    */
   
   // printf("inode_manager::read_file : inum:%u  size:%d\n", inum, *size);
-  if(inum < 0 || inum > bm->sb.ninodes || buf_out == NULL || *size < 0) {
+  if(inum < 0 || inum > bm->sb.ninodes || buf_out == NULL || size ==NULL || *size < 0) {
+    printf("inode_manager::read_file::parameters error\n");
     return;
   }
 
   // inode buf, block buf
-  char buf[BLOCK_SIZE], blockBuf[BLOCK_SIZE];
+  char inodeBuf[BLOCK_SIZE], blockBuf[BLOCK_SIZE];
   struct inode *ino_disk;
   
   // get inode
-  bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  ino_disk = (struct inode*)buf + inum % IPB;
+  bm->read_block(IBLOCK(inum, bm->sb.nblocks), inodeBuf);
+  ino_disk = (struct inode*)inodeBuf + inum % IPB;
   
   // get correct size, initialize content buffer
   if(*size == 0) {
@@ -285,7 +307,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   }
   *size = MIN((uint32_t)*size, ino_disk->size);
   char *content = (char*)malloc(sizeof(char)*(*size));
-  printf("inode_manager::read_file : file-size:%u\n", ino_disk->size);
+  // printf("inode_manager::read_file : file-size:%u\n", ino_disk->size);
 
   // p : current content pointer, 
   int p = 0;
@@ -293,7 +315,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   // get block content according to direct blocks
   for(int i = 0; i < NDIRECT && p < *size; ++i) {
     bm->read_block(ino_disk->blocks[i], blockBuf);
-    printf("inode_manager::read_file: bnum:%u\n", ino_disk->blocks[i]);
+    // printf("inode_manager::read_file: bnum:%u\n", ino_disk->blocks[i]);
     int tSize = MIN(BLOCK_SIZE, *size - p);
     memcpy(content + p, blockBuf, tSize);
     p += tSize;
@@ -301,11 +323,13 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 
   // if there is more content in indirect blocks
   if(p < *size) {
-    char indirectINODE[BLOCK_SIZE];
     // get the indirect block
-    bm->read_block(ino_disk->blocks[NDIRECT], indirectINODE);
+    char indirectINode[BLOCK_SIZE];
+    bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+    uint *blocks = (uint*)indirectINode;
+
     for(uint32_t i = 0; i < NINDIRECT && p < *size; ++i) {
-      bm->read_block( *((int *)(indirectINODE+i*sizeof(uint)) ), blockBuf);
+      bm->read_block( blocks[i], blockBuf);
       int tSize = MIN(BLOCK_SIZE, *size - p);
       memcpy(content + p, blockBuf, tSize);
       p += tSize;
@@ -365,7 +389,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     
     // get the indirect block
     char indirectINode[BLOCK_SIZE];
-    bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+    //bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
     uint *blocks = (uint*)indirectINode;
     uint32_t index = 0;
     while(p < size) {
@@ -391,6 +415,11 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
    * note: get the attributes of inode inum.
    * you can refer to "struct attr" in extent_protocol.h
    */
+  if(inum < 0 || inum > INODE_NUM) {
+    printf("inode_manager::getattr:: inum is out of range: %u\n", inum);
+    return;
+  }
+
   // get inode, can not use get_inode(), the test program will crash because it may return NULL.
   char buf[BLOCK_SIZE];
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
