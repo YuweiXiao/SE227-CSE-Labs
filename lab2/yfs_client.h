@@ -26,6 +26,13 @@ class yfs_client {
     unsigned long mtime;
     unsigned long ctime;
   };
+
+  // struct direntItem
+  // {
+  //   char name[32-sizeof(yfs_client::inum)];
+  //   yfs_client::inum inum;
+  // };
+
   struct dirent {
     std::string name;
     yfs_client::inum inum;

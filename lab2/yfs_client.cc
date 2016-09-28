@@ -18,6 +18,7 @@ yfs_client::yfs_client()
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
     ec = new extent_client();
+    printf("yfs_client::yfs_client::init root dir\n");
     if (ec->put(1, "") != extent_protocol::OK)
         printf("error init root dir\n"); // XYB: init root dir
 }
@@ -130,21 +131,52 @@ yfs_client::setattr(inum ino, size_t size)
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
+    extent_protocol::attr attribute;
+    ec->getattr(ino, attribute);
+    
 
+    if(size > attribute.size) {
+        
+    } else if(size < attribute.size){
+
+    }
     return r;
 }
 
 int
 yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+    
+     // check whether filename already exists.
+    bool found = false;
+    inum tmpinum;
+    int r = lookup(parent, name, found, tmpinum);
+    if( r != OK ) {
+        return r;
+    }
+    if( found ) {
+        std::cout<<"yfs_client::create::filename already exists"<<std::endl;
+        return r = extent_protocol::IOERR;
+    }
 
+    // create file
+    ec->create(extent_protocol::T_FILE, ino_out);
+    
+    // change parent content
+    std::string dirContent;
+    r = ec->get(parent, dirContent);
+    if( r != OK ) {
+        return r;
+    }
+    dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
+    std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
+    r = ec->put(parent, dirContent);
+    
     return r;
 }
 
@@ -165,28 +197,81 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 int
 yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: lookup file from parent dir according to name;
      * you should design the format of directory content.
      */
+    std::list<dirent> list;
+    int r = readdir(parent, list);
+    if(r != OK) {
+        return r;
+    }
 
+    std::list<dirent>::iterator it = list.begin();
+    while(it != list.end()) {
+        struct dirent t = *it;
+        if(t.name.compare(name) == 0) {
+            found = true;
+            ino_out = t.inum;
+            break;
+        }
+        it++;
+    }
     return r;
 }
 
 int
 yfs_client::readdir(inum dir, std::list<dirent> &list)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: you should parse the dirctory content using your defined format,
      * and push the dirents to the list.
      */
+    std::string dirContent;
+    std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
+    int r = ec->get(dir, dirContent);
+    if(r != extent_protocol::OK) {
+        printf("yfs_client::readdir::read dir error\n");
+        return r;
+    }
+    std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
+    size_t p = 0;
+    char tmp;
+    while(p != dirContent.size()) {
+        std::string name;
+        struct dirent entry;
+        while(dirContent[p] != '*' && p != dirContent.size()) {
+            name += dirContent[p];
+            p++;
+        }
+        p++;
+        if(p >= dirContent.size()) {
+            std::cout<<name<<std::endl;
+            printf("yfs_client::readdir::error dir format\n");
+            return extent_protocol::IOERR;
+        }
+        entry.name = name;
+        size_t num_pos = dirContent.find(' ', p);
+        entry.inum = n2i(dirContent.substr(p, num_pos - p));
+        p = num_pos + 1;
+        std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
+        list.push_back(entry);
+    }
 
+    // std::istringstream in(dirContent);
+    
+    // std::cout<<"yfs_client<<readdir::istream dircount:"<<dirContent.size()<<";count:"<<in.gcount()<<std::endl;
+    // while(!in.eof()) {
+    //     std::string name;
+        
+        
+    //     entry.name = name;
+    //     in>>entry.inum;
+    //     std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
+    //     list.push_back(entry);
+    // }
     return r;
 }
 

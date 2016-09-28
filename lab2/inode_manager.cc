@@ -107,6 +107,7 @@ block_manager::block_manager()
 {
   d = new disk();
 
+  // can improve performance by using_block members
   // format the disk
   sb.size = BLOCK_SIZE * BLOCK_NUM;
   sb.nblocks = BLOCK_NUM;
