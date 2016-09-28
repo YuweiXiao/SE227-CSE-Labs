@@ -107,7 +107,6 @@ block_manager::block_manager()
 {
   d = new disk();
 
-  // can improve performance by using_block members
   // format the disk
   sb.size = BLOCK_SIZE * BLOCK_NUM;
   sb.nblocks = BLOCK_NUM;
@@ -369,41 +368,84 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   // get inode
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), inodeBuf);
   ino_disk = (struct inode*)inodeBuf + inum % IPB;
-  ino_disk->size = size;
-
+  
+  int originBlockNum = (ino_disk->size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+  if(ino_disk->size == 0) {
+    originBlockNum = 0;
+  }
   // p : current content pointer, 
   int p = 0;
   
   // store content into direct blocks
-  for(int i = 0; i < NDIRECT && p < size; ++i) {
+  int i = 0;
+  blockid_t bnum;
+  for(; i < NDIRECT && p < size; ++i) {
     int tSize = MIN(BLOCK_SIZE, size - p);
     memcpy(blockBuf, buf + p, tSize);
-    blockid_t bnum = bm->alloc_block();
+    if(i < originBlockNum) {
+      bnum = ino_disk->blocks[i];
+    } else {
+      bnum = bm->alloc_block();
+      ino_disk->blocks[i] = bnum;  
+    }
     // printf("inode_manager::write_file: write block bnum:%d \n", bnum);
     bm->write_block(bnum, blockBuf);
-    ino_disk->blocks[i] = bnum;
     p = p + tSize;
   }
   // if there is more content to write, store in indirect blocks
   if(p < size) {
-    ino_disk->blocks[NDIRECT] = bm->alloc_block();
+    if(i > originBlockNum) {
+      ino_disk->blocks[NDIRECT] = bm->alloc_block();
+    }
     
     // get the indirect block
     char indirectINode[BLOCK_SIZE];
-    //bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+    bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
     uint *blocks = (uint*)indirectINode;
     uint32_t index = 0;
     while(p < size) {
       int tSize = MIN(BLOCK_SIZE, size - p);
       memcpy(blockBuf, buf + p, tSize);
-      blockid_t bnum = bm->alloc_block();
+      if(i < originBlockNum) {
+        bnum = blocks[index];
+      } else {
+        bnum = bm->alloc_block();
+        blocks[index] = bnum;
+      }
       bm->write_block(bnum, blockBuf);
-      blocks[index] = bnum;
       p = p + tSize;
       index++;
+      i++;
     }
     bm->write_block(ino_disk->blocks[NDIRECT], indirectINode);
   }
+  //free unused block
+  int blockCount = i + 1;
+  if(size == 0) {
+    blockCount = 0;
+  }
+  if(originBlockNum > blockCount) {
+    // free direct blocks
+    for(int j = blockCount; j < NDIRECT && j < originBlockNum; ++j) {
+      bm->free_block(ino_disk->blocks[j]);
+    }
+    // free indirect blocks
+    if(originBlockNum >= NDIRECT) {
+      char indirectINode[BLOCK_SIZE];
+      bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+      uint *blocks = (uint*)indirectINode;
+      int j = blockCount >= NDIRECT ? blockCount - NDIRECT + 1 : NDIRECT - NDIRECT;
+      while(NDIRECT + j < originBlockNum) {
+        bm->free_block(blocks[j]);
+        j++;
+      }
+      if(blockCount < NDIRECT) {
+        bm->free_block(ino_disk->blocks[NDIRECT]);
+      }
+    }
+  }
+
+  ino_disk->size = size;
   // bm->write_block(IBLOCK(inum), ino_disk);
   put_inode(inum, ino_disk);
 }

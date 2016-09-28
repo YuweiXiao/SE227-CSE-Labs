@@ -124,22 +124,31 @@ release:
 int
 yfs_client::setattr(inum ino, size_t size)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
     extent_protocol::attr attribute;
-    ec->getattr(ino, attribute);
-    
-
-    if(size > attribute.size) {
-        
-    } else if(size < attribute.size){
-
+    std::string content;
+    int r = ec->getattr(ino, attribute);
+    if(r != OK) {
+        printf("yfs_client::setattr::get attr error: inum:%u\n", ino);
+        return r;
     }
+    r = ec->get(ino, content);
+    if(r != OK) {
+        printf("yfs_client::setattr::get content error: inum:%u\n", ino);
+        return r;
+    }
+    if(size == attribute.size) {
+        return r;
+    } else if(size > attribute.size) {
+        content = content + std::string("\0",size - attribute.size);
+    } else if(size < attribute.size){
+        content = content.substr(0, size);
+    }
+    r = ec->put(ino, content);
     return r;
 }
 
@@ -190,6 +199,8 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if directory exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+     
+
 
     return r;
 }
@@ -238,7 +249,6 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
     }
     std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
     size_t p = 0;
-    char tmp;
     while(p != dirContent.size()) {
         std::string name;
         struct dirent entry;
@@ -278,13 +288,27 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
 int
 yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: read using ec->get().
      */
-
+    // std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    std::string content;
+    struct fileinfo fileInfo;
+    getfile(ino, fileInfo);
+    int r = ec->get(ino, content);
+    if( r != OK ) {
+        std::cout<<"yfs_client::read::read content error"<<std::endl;
+        return r;
+    }
+    if(off >= fileInfo.size) {
+        data = "";
+        // std::cout<<"yfs_client:read::data:offset is bigger than size"<<std::endl;
+    } else {
+        data = content.substr(off, size);
+        // std::cout<<"yfs_client:read::data:"<<data<<std::endl;
+    }
+    
     return r;
 }
 
@@ -292,14 +316,33 @@ int
 yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         size_t &bytes_written)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
-
+    // std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    struct fileinfo fileInfo;
+    std::string content;
+    getfile(ino, fileInfo);
+    // std::cout<<"yfs_client::write::size of original file:"<<fileInfo.size<<std::endl;
+    int r = ec->get(ino, content);
+    if( r != OK ) {
+        std::cout<<"yfs_client::read::read content error"<<std::endl;
+        return r;
+    }
+    // size_t newSize = fileInfo.size > off + size ? off + size : fileInfo.size
+    std::cout<<off-fileInfo.size<<std::endl;
+    if( fileInfo.size < off ) {
+        content += std::string(off - fileInfo.size, '\0');
+    }
+    std::string newContent = content.substr(0, off) + std::string(data).substr(0, size);
+    if(off + size < fileInfo.size) {
+        newContent += content.substr(off + size);
+    }
+    
+    r = ec->put(ino, newContent);
+    // std::cout<<"yfs_client::write::data::new content:"<<newContent<<std::endl;
     return r;
 }
 
