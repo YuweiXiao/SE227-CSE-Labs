@@ -40,6 +40,19 @@ yfs_client::filename(inum inum)
     return ost.str();
 }
 
+
+void
+yfs_client::appendDirContent(std::string& content, std::string &name, inum &ino_out) {
+    content = content + name + '*' + filename(ino_out) + ' ';
+}
+
+void
+yfs_client::appendDirContent(std::string& content, const char* name, inum & ino_out) {
+    std::string filename = std::string(name);
+    appendDirContent(content, filename, ino_out);
+}
+
+
 bool
 yfs_client::isfile(inum inum)
 {
@@ -144,7 +157,7 @@ yfs_client::setattr(inum ino, size_t size)
     if(size == attribute.size) {
         return r;
     } else if(size > attribute.size) {
-        content = content + std::string("\0",size - attribute.size);
+        content = content + std::string(size - attribute.size, '\0');
     } else if(size < attribute.size){
         content = content.substr(0, size);
     }
@@ -182,7 +195,8 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     if( r != OK ) {
         return r;
     }
-    dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
+    appendDirContent(dirContent, name, ino_out);
+    // dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
     std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
     
@@ -192,15 +206,37 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
 int
 yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 {
-    int r = OK;
 
     /*
      * your lab2 code goes here.
      * note: lookup is what you need to check if directory exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
-     
+    bool found = false;
+    int r = lookup(parent, name, found, ino_out);
+    if(r != OK || found) {
+        printf("yfs_client::mkdir::error\n");
+        return r;
+    }
+    std::string dirContent;
+    r = ec->get(parent, dirContent);
 
+    r = ec->create(extent_protocol::T_DIR, ino_out);
+    if(r != OK) {
+        printf("yfs_client::mkdir::create dir error\n");
+        return r;
+    }
+
+    r = ec->get(parent, dirContent);
+    if(r != OK) {
+        printf("yfs_client::mkdir::get parent dir error\n");
+        return r;
+    }
+
+    appendDirContent(dirContent, name, ino_out);
+    // dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
+    std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
+    r = ec->put(parent, dirContent);
 
     return r;
 }
@@ -292,7 +328,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your lab2 code goes here.
      * note: read using ec->get().
      */
-    // std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
     std::string content;
     struct fileinfo fileInfo;
     getfile(ino, fileInfo);
@@ -303,10 +339,10 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     }
     if(off >= fileInfo.size) {
         data = "";
-        // std::cout<<"yfs_client:read::data:offset is bigger than size"<<std::endl;
+        std::cout<<"yfs_client:read::data:offset is bigger than size"<<std::endl;
     } else {
         data = content.substr(off, size);
-        // std::cout<<"yfs_client:read::data:"<<data<<std::endl;
+        std::cout<<"yfs_client:read::data:"<<data<<std::endl;
     }
     
     return r;
@@ -321,11 +357,11 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
-    // std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
     struct fileinfo fileInfo;
     std::string content;
     getfile(ino, fileInfo);
-    // std::cout<<"yfs_client::write::size of original file:"<<fileInfo.size<<std::endl;
+    std::cout<<"yfs_client::write::size of original file:"<<fileInfo.size<<std::endl;
     int r = ec->get(ino, content);
     if( r != OK ) {
         std::cout<<"yfs_client::read::read content error"<<std::endl;
@@ -336,26 +372,46 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     if( fileInfo.size < off ) {
         content += std::string(off - fileInfo.size, '\0');
     }
-    std::string newContent = content.substr(0, off) + std::string(data).substr(0, size);
+    std::string newContent = content.substr(0, off) + std::string().assign(data, size);
     if(off + size < fileInfo.size) {
         newContent += content.substr(off + size);
     }
     
     r = ec->put(ino, newContent);
-    // std::cout<<"yfs_client::write::data::new content:"<<newContent<<std::endl;
+    std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
     return r;
 }
 
 int yfs_client::unlink(inum parent,const char *name)
 {
-    int r = OK;
-
     /*
      * your lab2 code goes here.
      * note: you should remove the file using ec->remove,
      * and update the parent directory content.
      */
 
+    bool found;
+    inum ino_out;
+    int r = lookup(parent, name, found, ino_out);
+    if( r != OK || !found ) {
+        printf("yfs_client::unlink::error\n");
+        return r;
+    }
+
+    std::string filename = std::string(name);    
+    std::list<dirent> list;
+    readdir(parent, list);
+    std::string newDirContent;
+    std::list<dirent>::iterator it = list.begin();
+    while(it != list.end()) {
+        struct dirent tmp = *it;
+        if(tmp.name != filename) {
+            appendDirContent(newDirContent, tmp.name, tmp.inum);
+        }
+        it++;
+    }
+    r = ec->put(parent, newDirContent);
+    r = ec->remove(ino_out);
     return r;
 }
 

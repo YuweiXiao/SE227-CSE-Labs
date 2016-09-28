@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include "extent_protocol.h"
+#include "gettime.h"
 
 #define DISK_SIZE  1024*1024*16
 #define BLOCK_SIZE 512
@@ -88,6 +89,7 @@ class inode_manager {
   block_manager *bm;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  unsigned int getTime();
 
  public:
   inode_manager();

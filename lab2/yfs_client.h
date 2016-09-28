@@ -41,6 +41,8 @@ class yfs_client {
  private:
   static std::string filename(inum);
   static inum n2i(std::string);
+  void appendDirContent(std::string &, const char *, inum &);
+  void appendDirContent(std::string &, std::string &, inum &);
 
  public:
   yfs_client();

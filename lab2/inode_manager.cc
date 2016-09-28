@@ -43,7 +43,7 @@ block_manager::alloc_block()
    * your lab1 code goes here.
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
-
+alloc
    *hint: use macro IBLOCK and BBLOCK.
           use bit operation.
           remind yourself of the layout of disk.
@@ -138,6 +138,20 @@ inode_manager::inode_manager()
   }
 }
 
+unsigned int
+inode_manager::getTime()
+{
+// struct timesepc {
+//  time_t tv_sec; //whole seconds (valid values are >= 0) 
+//  long tv_nsec;  //nanoseconds (valid values are [0, 999999999])  
+// }
+  struct timespec t;
+  if(clock_gettime(CLOCK_REALTIME, &t) == 0)
+    return t.tv_sec;
+  else 
+    return -1;
+}
+
 /* Create a new file.
  * Return its inum. */
 uint32_t
@@ -162,7 +176,10 @@ inode_manager::alloc_inode(uint32_t type)
     bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
     ino_disk = (struct inode*)buf + inum%IPB;
     if(ino_disk->type == 0) {
-      // TODO: update xtime
+      
+      ino_disk->ctime = getTime();
+      ino_disk->mtime = ino_disk->ctime;
+      ino_disk->atime = ino_disk->ctime;
       ino_disk->type = type;
       bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
       return inum;
@@ -173,36 +190,6 @@ inode_manager::alloc_inode(uint32_t type)
   // no more inode available.
   printf("no block for inode to allocate\n");
   return -1;
-  // find free block for new inode to allocate
-  // bm->read_block(BBLOCK(0), buf);
-  // int p = 1;
-  // int inum = -1;
-  // for(int i = 0; i < BLOCK_SIZE && p <= INODE_NUM && inum == -1; ++i) {
-  //   for(int j = 7; j >= 0 && p <= INODE_NUM && inum == -1; --j) {
-  //     if(BIT_STATE(buf[i], j) == 0) {
-  //       inum = p;
-  //       buf[i] = buf[i] | (1<<j);
-  //       break;
-  //     } 
-  //     p++;
-  //   }
-  // }
-  // // no free block for new inode
-  // if(inum == -1) {
-  //   printf("no block for inode to allocate\n");
-  //   return -1;
-  // }
-  
-  // // update bitmap
-  // bm->write_block(BBLOCK(0), buf);
-
-  // // get the inode block, update attr.  
-  // // TODO: update xtime
-  // bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  // ino_disk = (struct inode*)buf + inum%IPB;
-  // ino_disk->type = type;
-  // bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  // return inum;
 }
 
 void
@@ -301,6 +288,10 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), inodeBuf);
   ino_disk = (struct inode*)inodeBuf + inum % IPB;
   
+  // update access time
+  ino_disk->atime = getTime();
+  bm->write_block(IBLOCK(inum, bm->sb.nblocks), inodeBuf);
+
   // get correct size, initialize content buffer
   if(*size == 0) {
     *size = ino_disk->size;
@@ -369,6 +360,13 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), inodeBuf);
   ino_disk = (struct inode*)inodeBuf + inum % IPB;
   
+  // update modification time();
+  ino_disk->atime = getTime();
+  ino_disk->mtime = ino_disk->atime;
+  ino_disk->ctime = ino_disk->atime;
+  std::cout<<"inode_manager::write_file::time:"<<ino_disk->atime<<std::endl;
+
+
   int originBlockNum = (ino_disk->size + BLOCK_SIZE - 1) / BLOCK_SIZE;
   if(ino_disk->size == 0) {
     originBlockNum = 0;
@@ -419,6 +417,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     }
     bm->write_block(ino_disk->blocks[NDIRECT], indirectINode);
   }
+
   //free unused block
   int blockCount = i + 1;
   if(size == 0) {
