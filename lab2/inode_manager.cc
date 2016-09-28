@@ -132,6 +132,7 @@ inode_manager::inode_manager()
 {
   bm = new block_manager();
   uint32_t root_dir = alloc_inode(extent_protocol::T_DIR);
+  printf("im: init root_dir\n");
   if (root_dir != 1) {
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
     exit(0);
@@ -164,8 +165,6 @@ inode_manager::alloc_inode(uint32_t type)
   
    * if you get some heap memory, do not forget to free it.
    */
-  
-  //TODO, type check
 
   struct inode *ino_disk;
   char buf[BLOCK_SIZE];

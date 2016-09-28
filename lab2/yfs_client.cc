@@ -67,7 +67,7 @@ yfs_client::isfile(inum inum)
         printf("isfile: %lld is a file\n", inum);
         return true;
     } 
-    printf("isfile: %lld is a dir\n", inum);
+    printf("isfile: %lld is not a file\n", inum);
     return false;
 }
 /** Your code here for Lab...
@@ -79,8 +79,20 @@ yfs_client::isfile(inum inum)
 bool
 yfs_client::isdir(inum inum)
 {
-    // Oops! is this still correct when you implement symlink?
-    return ! isfile(inum);
+    extent_protocol::attr a;
+
+    if (ec->getattr(inum, a) != extent_protocol::OK) {
+        printf("error getting attr\n");
+        return false;
+    }
+
+    if (a.type == extent_protocol::T_DIR) {
+        printf("isfile: %lld is a dir\n", inum);
+        return true;
+    } 
+    return false;
+    // // Oops! is this still correct when you implement symlink?
+    // return ! isfile(inum);
 }
 
 int
@@ -179,6 +191,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     inum tmpinum;
     int r = lookup(parent, name, found, tmpinum);
     if( r != OK ) {
+        printf("yfs_client::create::lookup error\n");
         return r;
     }
     if( found ) {
@@ -187,7 +200,13 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     }
 
     // create file
-    ec->create(extent_protocol::T_FILE, ino_out);
+    std::cout<<"yfs_client::create::mode:"<<mode<<";S_IFLNK:"<<S_IFLNK<<std::endl;
+    if(mode == S_IFLNK) {
+        printf("yfs_client::create::symbolic create\n");
+        ec->create(extent_protocol::T_SYMLNK, ino_out);
+    } else {
+        ec->create(extent_protocol::T_FILE, ino_out);
+    }
     
     // change parent content
     std::string dirContent;
@@ -197,7 +216,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     }
     appendDirContent(dirContent, name, ino_out);
     // dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
-    std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
+    std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
     
     return r;
@@ -206,7 +225,6 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
 int
 yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 {
-
     /*
      * your lab2 code goes here.
      * note: lookup is what you need to check if directory exist;
@@ -341,6 +359,9 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
         data = "";
         std::cout<<"yfs_client:read::data:offset is bigger than size"<<std::endl;
     } else {
+        // if(size == -1) {
+        //     size = fileInfo.size;
+        // }
         data = content.substr(off, size);
         std::cout<<"yfs_client:read::data:"<<data<<std::endl;
     }
