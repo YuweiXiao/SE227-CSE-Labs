@@ -9,15 +9,15 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-yfs_client::yfs_client()
-{
-    ec = new extent_client();
+// yfs_client::yfs_client()
+// {
+//     ec = new extent_client();
 
-}
+// }
 
-yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
+yfs_client::yfs_client(std::string extent_dst)
 {
-    ec = new extent_client();
+    ec = new extent_client(extent_dst);
     printf("yfs_client::yfs_client::init root dir\n");
     if (ec->put(1, "") != extent_protocol::OK)
         printf("error init root dir\n"); // XYB: init root dir

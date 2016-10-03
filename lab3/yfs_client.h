@@ -45,8 +45,8 @@ class yfs_client {
   void appendDirContent(std::string &, std::string &, inum &);
 
  public:
-  yfs_client();
-  yfs_client(std::string, std::string);
+  // yfs_client();
+  yfs_client(std::string);
 
   bool isfile(inum);
   bool isdir(inum);
