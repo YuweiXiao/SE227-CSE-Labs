@@ -4,7 +4,8 @@
 #define inode_h
 
 #include <stdint.h>
-#include "extent_protocol.h" // TODO: delete it
+#include "extent_protocol.h"
+#include "gettime.h"
 
 #define DISK_SIZE  1024*1024*16
 #define BLOCK_SIZE 512
@@ -67,8 +68,15 @@ class block_manager {
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 
+#define BIT_STATE(c, p) ((c>>p)&1)
+// get the index of the byte which store the usage info of block id
+#define BLOCK_BITMAP_INDEX(id) (((id) % BPB) / 8)
+// get the offset of block id in the byte which store the usage info of it
+#define BLOCK_BITMAP_OFFSET(id) (7 - ((id) % BPB) % 8)
+
 typedef struct inode {
-  short type;
+  //short type;
+  unsigned int type;
   unsigned int size;
   unsigned int atime;
   unsigned int mtime;
@@ -81,6 +89,7 @@ class inode_manager {
   block_manager *bm;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  unsigned int getTime();
 
  public:
   inode_manager();
