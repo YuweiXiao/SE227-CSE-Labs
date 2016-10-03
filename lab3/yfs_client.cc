@@ -302,13 +302,13 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
      * and push the dirents to the list.
      */
     std::string dirContent;
-    // std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
+    std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
     int r = ec->get(dir, dirContent);
     if(r != extent_protocol::OK) {
         printf("yfs_client::readdir::read dir error\n");
         return r;
     }
-    // std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
+    std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
     size_t p = 0;
     while(p != dirContent.size()) {
         std::string name;
@@ -320,7 +320,7 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
         p++;    // ignore the '*' character
         // the name must make pare with inum
         if(p >= dirContent.size()) {
-            // std::cout<<name<<std::endl;
+            std::cout<<name<<std::endl;
             printf("yfs_client::readdir::error dir format\n");
             return extent_protocol::IOERR;
         }
@@ -328,7 +328,7 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
         size_t num_pos = dirContent.find(' ', p);
         entry.inum = n2i(dirContent.substr(p, num_pos - p));
         p = num_pos + 1;
-        // std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
+        std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
         list.push_back(entry);
     }
     return r;

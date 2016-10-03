@@ -25,6 +25,19 @@ int id() {
     return myid;
 }
 
+void fuseserver_readlink(fuse_req_t req, fuse_ino_t ino) {
+    std::cout<<"fuseserver_readlink: in read link"<<std::endl;
+    std::string link;
+    int r = yfs->read(ino, -1, 0, link);
+    if(r == yfs_client::OK) {
+        std::cout<<"fuseserver_readlink: in read link:link content:"<<link<<std::endl;
+        fuse_reply_readlink(req, link.c_str());
+        return ;
+    }
+    fuse_reply_err(req, ENOENT);
+}
+
+
 //
 // A file/directory's attributes are a set of information
 // including owner, permissions, size, &c. The information is
@@ -58,7 +71,7 @@ getattr(yfs_client::inum inum, struct stat &st)
         st.st_ctime = info.ctime;
         st.st_size = info.size;
         printf("   getattr -> %llu\n", info.size);
-    } else {
+    } else if(yfs->isdir(inum)) {
         yfs_client::dirinfo info;
         ret = yfs->getdir(inum, info);
         if(ret != yfs_client::OK)
@@ -69,6 +82,18 @@ getattr(yfs_client::inum inum, struct stat &st)
         st.st_mtime = info.mtime;
         st.st_ctime = info.ctime;
         printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+    } else {
+        yfs_client::fileinfo info;
+        ret = yfs->getfile(inum, info);
+        if(ret != yfs_client::OK)
+            return ret;
+        st.st_mode = S_IFLNK | 0777;
+        st.st_nlink = 1;
+        st.st_atime = info.atime;
+        st.st_mtime = info.mtime;
+        st.st_ctime = info.ctime;
+        st.st_size = info.size;
+        printf("   getattr -> %llu\n", info.size);
     }
     return yfs_client::OK;
 }
@@ -121,28 +146,33 @@ void
 fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
         int to_set, struct fuse_file_info *fi)
 {
+    //TODO set time and other attribute
     printf("fuseserver_setattr 0x%x\n", to_set);
-    if (FUSE_SET_ATTR_SIZE & to_set) {
-        printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
-        struct stat st;
+    // if (FUSE_SET_ATTR_SIZE & to_set) {
+    printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
+    struct stat st;
 
 #if 1
-        // Change the above line to "#if 1", and your code goes here
-        // Note: fill st using getattr before fuse_reply_attr
-        if (to_set & FUSE_SET_ATTR_SIZE) {
-            yfs->setattr(ino, attr->st_size);
-        }
-        getattr(ino, st);
-        fuse_reply_attr(req, &st, 0);
+    // Change the above line to "#if 1", and your code goes here
+    // Note: fill st using getattr before fuse_reply_attr
+    if (to_set & FUSE_SET_ATTR_SIZE) {
+        yfs->setattr(ino, attr->st_size);
+    }
+    if (to_set & FUSE_SET_ATTR_ATIME) {
+        yfs->setattr_atime(ino, attr->st_atime);
+    }
+    getattr(ino, st);
+    fuse_reply_attr(req, &st, 0);
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
 
-    } else {
-        fuse_reply_err(req, ENOSYS);
-    }
+    // } else {
+        // struct stat st;
+        // fuse_reply_attr(req, &st, 0);   
+       // fuse_reply_err(req, ENOSYS);
+    // }
 }
-
 //
 // Read up to @size bytes starting at byte offset @off in file @ino.
 //
@@ -263,6 +293,26 @@ fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
         }else{
             fuse_reply_err(req, ENOENT);
         }
+    }
+}
+
+void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char *name) {
+    printf("fuseserver::creating symbolic link : %s filename:%s\n", link, name);
+    struct fuse_entry_param e;
+    yfs_client::status r = fuseserver_createhelper(parent, name, S_IFLNK, &e, extent_protocol::T_FILE);
+    if( r == yfs_client::OK ) {
+        size_t writebytes = strlen(name);
+        r = yfs->write(e.ino, writebytes, 0, link, writebytes);
+        if( r== yfs_client:: OK) {
+            fuse_reply_entry(req, &e);
+            printf("fuseserver_symlink:: symbolic create returns.\n");
+            return;
+        }
+    } 
+    if (r == yfs_client::EXIST) {
+        fuse_reply_err(req, EEXIST);
+    }else{
+        fuse_reply_err(req, ENOENT);
     }
 }
 
@@ -494,6 +544,8 @@ main(int argc, char *argv[])
     fuseserver_oper.setattr    = fuseserver_setattr;
     fuseserver_oper.unlink     = fuseserver_unlink;
     fuseserver_oper.mkdir      = fuseserver_mkdir;
+    fuseserver_oper.readlink   = fuseserver_readlink;
+    fuseserver_oper.symlink    = fuseserver_symlink;
     /** Your code here for Lab.
      * you may want to add
      * routines here to implement symbolic link,
