@@ -147,26 +147,32 @@ void
 fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
         int to_set, struct fuse_file_info *fi)
 {
+    //TODO set time and other attribute
     printf("fuseserver_setattr 0x%x\n", to_set);
-    if (FUSE_SET_ATTR_SIZE & to_set) {
-        printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
-        struct stat st;
+    // if (FUSE_SET_ATTR_SIZE & to_set) {
+    printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
+    struct stat st;
 
 #if 1
-        // Change the above line to "#if 1", and your code goes here
-        // Note: fill st using getattr before fuse_reply_attr
-        if (to_set & FUSE_SET_ATTR_SIZE) {
-            yfs->setattr(ino, attr->st_size);
-        }
-        getattr(ino, st);
-        fuse_reply_attr(req, &st, 0);
+    // Change the above line to "#if 1", and your code goes here
+    // Note: fill st using getattr before fuse_reply_attr
+    if (to_set & FUSE_SET_ATTR_SIZE) {
+        yfs->setattr(ino, attr->st_size);
+    }
+    if (to_set & FUSE_SET_ATTR_ATIME) {
+        yfs->setattr_atime(ino, attr->st_atime);
+    }
+    getattr(ino, st);
+    fuse_reply_attr(req, &st, 0);
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
 
-    } else {
-        fuse_reply_err(req, ENOSYS);
-    }
+    // } else {
+        // struct stat st;
+        // fuse_reply_attr(req, &st, 0);   
+       // fuse_reply_err(req, ENOSYS);
+    // }
 }
 
 //
@@ -467,6 +473,18 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
 
 }
 
+void 
+fuseserver_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
+    fuse_reply_err(req, 0);
+    // int ret = yfs->rmdir(parent, name);
+    // if( ret == yfs_client::OK ) {
+    //     fuse_reply_err(req, 0);
+    // } else {
+    //     fuse_reply_err(req, 1); //TODO correct error code
+    // }
+}
+
+
 //
 // Remove the file named @name from directory @parent.
 // Free the file's extent.
@@ -487,6 +505,12 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
             fuse_reply_err(req, ENOTEMPTY);
         }
     }
+}
+
+void 
+fuseserver_setxattr (fuse_req_t req, fuse_ino_t ino, const char *name,
+              const char *value, size_t size, int flags) {
+
 }
 
 void
@@ -548,6 +572,8 @@ main(int argc, char *argv[])
     fuseserver_oper.mkdir      = fuseserver_mkdir;
     fuseserver_oper.readlink   = fuseserver_readlink;
     fuseserver_oper.symlink    = fuseserver_symlink;
+    // fuseserver_oper.rmdir      = fuseserver_rmdir;
+    // fuseserver_oper.setxattr   = fuseserver_setxattr;
     /** Your code here for Lab.
      * you may want to add
      * routines here to implement symbolic link,

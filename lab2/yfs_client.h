@@ -55,6 +55,7 @@ class yfs_client {
   int getdir(inum, dirinfo &);
 
   int setattr(inum, size_t);
+  int setattr_atime(inum, unsigned long long);
   int lookup(inum, const char *, bool &, inum &);
   int create(inum, const char *, mode_t, inum &);
   int symlink(inum, const char *, const char *, inum&);
@@ -63,7 +64,6 @@ class yfs_client {
   int read(inum, size_t, off_t, std::string &);
   int unlink(inum,const char *);
   int mkdir(inum , const char *, mode_t , inum &);
-  
   /** you may need to add symbolic link related methods here.*/
 };
 

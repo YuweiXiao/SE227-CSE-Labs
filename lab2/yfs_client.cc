@@ -145,6 +145,14 @@ release:
     } \
 } while (0)
 
+int
+yfs_client::setattr_atime(inum ino, unsigned long long time)
+{
+    int r = OK;
+    return r;
+}
+
+
 // Only support set size of attr
 int
 yfs_client::setattr(inum ino, size_t size)
@@ -158,12 +166,12 @@ yfs_client::setattr(inum ino, size_t size)
     std::string content;
     int r = ec->getattr(ino, attribute);
     if(r != OK) {
-        printf("yfs_client::setattr::get attr error: inum:%u\n", ino);
+        std::cout<<"yfs_client::setattr::get attr error: inum:"<<ino<<std::endl;
         return r;
     }
     r = ec->get(ino, content);
     if(r != OK) {
-        printf("yfs_client::setattr::get content error: inum:%u\n", ino);
+        std::cout<<"yfs_client::setattr::get content error: inum:"<<ino<<std::endl;
         return r;
     }
     if(size == attribute.size) {
@@ -196,13 +204,14 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     }
     if( found ) {
         std::cout<<"yfs_client::create::filename already exists"<<std::endl;
-        return r = extent_protocol::IOERR;
+        return r = yfs_client::EXIST;
     }
 
     // create file
-    std::cout<<"yfs_client::create::mode:"<<mode<<";S_IFLNK:"<<S_IFLNK<<std::endl;
+    // std::cout<<"yfs_client::create::mode:"<<mode<<";S_IFLNK:"<<S_IFLNK<<std::endl;
+    // symblic link file
     if(mode == S_IFLNK) {
-        printf("yfs_client::create::symbolic create\n");
+        // printf("yfs_client::create::symbolic create\n");
         ec->create(extent_protocol::T_SYMLNK, ino_out);
     } else {
         ec->create(extent_protocol::T_FILE, ino_out);
@@ -215,8 +224,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
         return r;
     }
     appendDirContent(dirContent, name, ino_out);
-    // dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
-    std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
+    // std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
     
     return r;
@@ -252,8 +260,7 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     }
 
     appendDirContent(dirContent, name, ino_out);
-    // dirContent = dirContent + std::string(name) + '*' + filename(ino_out) + ' ';
-    std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
+    // std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
 
     return r;
@@ -295,13 +302,13 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
      * and push the dirents to the list.
      */
     std::string dirContent;
-    std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
+    // std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
     int r = ec->get(dir, dirContent);
     if(r != extent_protocol::OK) {
         printf("yfs_client::readdir::read dir error\n");
         return r;
     }
-    std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
+    // std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
     size_t p = 0;
     while(p != dirContent.size()) {
         std::string name;
@@ -310,9 +317,10 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
             name += dirContent[p];
             p++;
         }
-        p++;
+        p++;    // ignore the '*' character
+        // the name must make pare with inum
         if(p >= dirContent.size()) {
-            std::cout<<name<<std::endl;
+            // std::cout<<name<<std::endl;
             printf("yfs_client::readdir::error dir format\n");
             return extent_protocol::IOERR;
         }
@@ -320,22 +328,9 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
         size_t num_pos = dirContent.find(' ', p);
         entry.inum = n2i(dirContent.substr(p, num_pos - p));
         p = num_pos + 1;
-        std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
+        // std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
         list.push_back(entry);
     }
-
-    // std::istringstream in(dirContent);
-    
-    // std::cout<<"yfs_client<<readdir::istream dircount:"<<dirContent.size()<<";count:"<<in.gcount()<<std::endl;
-    // while(!in.eof()) {
-    //     std::string name;
-        
-        
-    //     entry.name = name;
-    //     in>>entry.inum;
-    //     std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
-    //     list.push_back(entry);
-    // }
     return r;
 }
 
@@ -346,24 +341,28 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your lab2 code goes here.
      * note: read using ec->get().
      */
-    std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    // std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    if( off < 0 ) {
+        off = 0;
+    }
     std::string content;
     struct fileinfo fileInfo;
-    getfile(ino, fileInfo);
-    int r = ec->get(ino, content);
+    int r = getfile(ino, fileInfo);
+    if(r != OK ) {
+        std::cout<<"yfs_client::read::read file info error:inum:"<<ino<<std::endl;
+        return r;
+    } 
+    r = ec->get(ino, content);
     if( r != OK ) {
-        std::cout<<"yfs_client::read::read content error"<<std::endl;
+        std::cout<<"yfs_client::read::read content error:inum:"<<ino<<std::endl;
         return r;
     }
-    if(off >= fileInfo.size) {
+    if((unsigned long long)off >= fileInfo.size) {
         data = "";
         std::cout<<"yfs_client:read::data:offset is bigger than size"<<std::endl;
     } else {
-        // if(size == -1) {
-        //     size = fileInfo.size;
-        // }
         data = content.substr(off, size);
-        std::cout<<"yfs_client:read::data:"<<data<<std::endl;
+        // std::cout<<"yfs_client:read::data:"<<data<<std::endl;
     }
     
     return r;
@@ -378,28 +377,36 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
-    std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    if( off < 0 ) {
+        off = 0;
+    }
+    // std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
     struct fileinfo fileInfo;
     std::string content;
-    getfile(ino, fileInfo);
-    std::cout<<"yfs_client::write::size of original file:"<<fileInfo.size<<std::endl;
-    int r = ec->get(ino, content);
+    int r = getfile(ino, fileInfo);
     if( r != OK ) {
-        std::cout<<"yfs_client::read::read content error"<<std::endl;
+        std::cout<<"yfs_client::read::read file info error:inum:"<<ino<<std::endl;
+    }
+    // std::cout<<"yfs_client::write::size of original file:"<<fileInfo.size<<std::endl;
+    r = ec->get(ino, content);
+    if( r != OK ) {
+        std::cout<<"yfs_client::read::read content error:inum"<<ino<<std::endl;
         return r;
     }
     // size_t newSize = fileInfo.size > off + size ? off + size : fileInfo.size
-    std::cout<<off-fileInfo.size<<std::endl;
-    if( fileInfo.size < off ) {
+    // std::cout<<off-fileInfo.size<<std::endl;
+    // add hole into the content
+    if( (unsigned long long)off > fileInfo.size) {
         content += std::string(off - fileInfo.size, '\0');
     }
     std::string newContent = content.substr(0, off) + std::string().assign(data, size);
+    // add content not be overwritten in the original content
     if(off + size < fileInfo.size) {
         newContent += content.substr(off + size);
     }
     
     r = ec->put(ino, newContent);
-    std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
+    // std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
     return r;
 }
 
