@@ -45,13 +45,15 @@ class yfs_client {
  private:
   static std::string filename(inum);
   static inum n2i(std::string);
-
-
- public:
-  yfs_client(std::string, std::string);
   void appendDirContent(std::string &, const char *, inum &);
   void appendDirContent(std::string &, std::string &, inum &);
-
+  int _lookup(inum, const char *, bool &, inum &);
+  int _readdir(inum, std::list<dirent> &);
+  int _getfile(inum, fileinfo &);  
+  
+ public:
+  yfs_client(std::string, std::string);
+  
  public:
   // yfs_client();
   yfs_client(std::string);

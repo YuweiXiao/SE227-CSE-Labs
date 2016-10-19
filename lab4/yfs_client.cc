@@ -51,47 +51,58 @@ yfs_client::appendDirContent(std::string& content, const char* name, inum & ino_
 bool
 yfs_client::isfile(inum inum)
 {
+    printf("yfs_client::isfile: %llu\n", inum);
+    lc->acquire(inum);
     extent_protocol::attr a;
+    bool flag = false;
 
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    int r = ec->getattr(inum, a);
+    if (r != extent_protocol::OK) {
         printf("error getting attr\n");
-        return false;
-    }
-
-    if (a.type == extent_protocol::T_FILE) {
+    } else if (a.type == extent_protocol::T_FILE) {
         printf("isfile: %lld is a file\n", inum);
-        return true;
+        flag = true;
     } 
 
-    printf("isfile: %lld is not a file\n", inum);
-    return false;
+    lc->release(inum);
+    return flag;
 }
 
 
 bool
 yfs_client::isdir(inum inum)
 {
-
+    printf("yfs_client::isdir %llu\n", inum);
+    lc->acquire(inum);
+    bool flag = false;
     extent_protocol::attr a;
-
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    int r = ec->getattr(inum, a);
+    if ( r != extent_protocol::OK ) {
         printf("error getting attr\n");
-        return false;
-    }
-
-    if (a.type == extent_protocol::T_DIR) {
+    } else if (a.type == extent_protocol::T_DIR) {
         printf("isfile: %lld is a dir\n", inum);
-        return true;
+        flag = true;
     } 
-    return false;
+    lc->release(inum);
+    return flag;
 }
 
 int
 yfs_client::getfile(inum inum, fileinfo &fin)
 {
+    printf("yfs_client::getfile %llu\n", inum);
+    lc->acquire(inum);
+    int r = _getfile(inum, fin);
+    lc->release(inum);
+    return r;
+}
+
+int
+yfs_client::_getfile(inum inum, fileinfo &fin)
+{
     int r = OK;
 
-    printf("getfile %016llx\n", inum);
+    printf("yfs_client::_getfile %llu\n", inum);
     extent_protocol::attr a;
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         r = IOERR;
@@ -102,7 +113,7 @@ yfs_client::getfile(inum inum, fileinfo &fin)
     fin.mtime = a.mtime;
     fin.ctime = a.ctime;
     fin.size = a.size;
-    printf("getfile %016llx -> sz %llu\n", inum, fin.size);
+    printf("yfs_client::_getfile %llu -> sz %llu\n", inum, fin.size);
 
 release:
     return r;
@@ -111,9 +122,10 @@ release:
 int
 yfs_client::getdir(inum inum, dirinfo &din)
 {
-    int r = OK;
+    printf("yfs_client::getdir: %llu\n", inum);
+    lc->acquire(inum);
 
-    printf("getdir %016llx\n", inum);
+    int r = OK;
     extent_protocol::attr a;
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         r = IOERR;
@@ -124,6 +136,7 @@ yfs_client::getdir(inum inum, dirinfo &din)
     din.ctime = a.ctime;
 
 release:
+    lc->release(inum);
     return r;
 }
 
@@ -154,27 +167,30 @@ yfs_client::setattr(inum ino, size_t size)
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
+    printf("yfs_client::setattr: %llu\n", ino);
+    lc->acquire(ino);
 
     extent_protocol::attr attribute;
     std::string content;
     int r = ec->getattr(ino, attribute);
     if(r != OK) {
         std::cout<<"yfs_client::setattr::get attr error: inum:"<<ino<<std::endl;
+        lc->release(ino);
         return r;
     }
     r = ec->get(ino, content);
     if(r != OK) {
         std::cout<<"yfs_client::setattr::get content error: inum:"<<ino<<std::endl;
+        lc->release(ino);
         return r;
     }
-    if(size == attribute.size) {
-        return r;
-    } else if(size > attribute.size) {
+    if(size > attribute.size) {
         content = content + std::string(size - attribute.size, '\0');
     } else if(size < attribute.size){
         content = content.substr(0, size);
     }
     r = ec->put(ino, content);
+    lc->release(ino);
     return r;
 }
 
@@ -186,22 +202,25 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
-    
+    printf("yfs_client::create: parent inode: %llu\n", parent);
+    lc->acquire(parent);
      // check whether filename already exists.
     bool found = false;
     inum tmpinum;
-    int r = lookup(parent, name, found, tmpinum);
+    int r = _lookup(parent, name, found, tmpinum);
     if( r != OK ) {
         printf("yfs_client::create::lookup error\n");
+        lc->release(parent);
         return r;
     }
     if( found ) {
         std::cout<<"yfs_client::create::filename already exists"<<std::endl;
+        lc->release(parent);
         return r = yfs_client::EXIST;
     }
 
     // create file
-    // std::cout<<"yfs_client::create::mode:"<<mode<<";S_IFLNK:"<<S_IFLNK<<std::endl;
+    std::cout<<"yfs_client::create::mode:"<<mode<<";S_IFLNK:"<<S_IFLNK<<std::endl;
     // symblic link file
     if(mode == S_IFLNK) {
         // printf("yfs_client::create::symbolic create\n");
@@ -217,9 +236,10 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
         return r;
     }
     appendDirContent(dirContent, name, ino_out);
-    // std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
+    std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
-    
+
+    lc->release(parent);
     return r;
 }
 
@@ -231,11 +251,13 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if directory exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
-
+    printf("yfs_client::makedir:parent inode: %llu\n", parent);
+    lc->acquire(parent);
     bool found = false;
-    int r = lookup(parent, name, found, ino_out);
+    int r = _lookup(parent, name, found, ino_out);
     if(r != OK || found) {
         printf("yfs_client::mkdir::error\n");
+        lc->release(parent);
         return r;
     }
     std::string dirContent;
@@ -244,32 +266,46 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     r = ec->create(extent_protocol::T_DIR, ino_out);
     if(r != OK) {
         printf("yfs_client::mkdir::create dir error\n");
+        lc->release(parent);
         return r;
     }
 
     r = ec->get(parent, dirContent);
     if(r != OK) {
         printf("yfs_client::mkdir::get parent dir error\n");
+        lc->release(parent);
         return r;
     }
 
     appendDirContent(dirContent, name, ino_out);
     // std::cout<<"yfs_client::create:dir content"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
+    lc->release(parent);
     return r;
 }
 
 int
 yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 {
+    printf("yfs_client::lookup: parent inode: %llu\n", parent);
+    lc->acquire(parent);
+    int r = _lookup(parent, name, found, ino_out);
+    lc->release(parent);
+    return r;
+}
+
+
+int
+yfs_client::_lookup(inum parent, const char *name, bool &found, inum &ino_out)
+{
     /*
      * your lab2 code goes here.
      * note: lookup file from parent dir according to name;
      * you should design the format of directory content.
      */
-
+    printf("yfs_client::getfile: parent inode: %llu\n", parent);
     std::list<dirent> list;
-    int r = readdir(parent, list);
+    int r = _readdir(parent, list);
     if(r != OK) {
         return r;
     }
@@ -288,14 +324,23 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 }
 
 int
-yfs_client::readdir(inum dir, std::list<dirent> &list)
+yfs_client::readdir(inum dir, std::list<dirent> &list) {
+    printf("yfs_client::readdir: inum: %llu\n", dir);
+    lc->acquire(dir);
+    int r = _readdir(dir, list);
+    lc->release(dir);
+    return r;
+}
+
+int
+yfs_client::_readdir(inum dir, std::list<dirent> &list)
 {
     /*
      * your lab2 code goes here.
      * note: you should parse the dirctory content using your defined format,
      * and push the dirents to the list.
      */
-
+    printf("yfs_client::readdir: inum: %llu\n", dir);
     std::string dirContent;
     std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
     int r = ec->get(dir, dirContent);
@@ -336,20 +381,24 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your lab2 code goes here.
      * note: read using ec->get().
      */
-    // std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    std::cout<<"yfs_client::read:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    lc->acquire(ino);
+
     if( off < 0 ) {
         off = 0;
     }
     std::string content;
     struct fileinfo fileInfo;
-    int r = getfile(ino, fileInfo);
+    int r = _getfile(ino, fileInfo);
     if(r != OK ) {
         std::cout<<"yfs_client::read::read file info error:inum:"<<ino<<std::endl;
+        lc->release(ino);
         return r;
     } 
     r = ec->get(ino, content);
     if( r != OK ) {
         std::cout<<"yfs_client::read::read content error:inum:"<<ino<<std::endl;
+        lc->release(ino);
         return r;
     }
     if((unsigned long long)off >= fileInfo.size) {
@@ -360,6 +409,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
         // std::cout<<"yfs_client:read::data:"<<data<<std::endl;
     }
     
+    lc->release(ino);
     return r;
 }
 
@@ -372,13 +422,16 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
+    printf("yfs_client::write: inum: %llu\n", ino);
+    lc->acquire(ino);
+
     if( off < 0 ) {
         off = 0;
     }
-    // std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
     struct fileinfo fileInfo;
     std::string content;
-    int r = getfile(ino, fileInfo);
+    int r = _getfile(ino, fileInfo);
     if( r != OK ) {
         std::cout<<"yfs_client::read::read file info error:inum:"<<ino<<std::endl;
     }
@@ -386,6 +439,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     r = ec->get(ino, content);
     if( r != OK ) {
         std::cout<<"yfs_client::read::read content error:inum"<<ino<<std::endl;
+        lc->release(ino);
         return r;
     }
     // size_t newSize = fileInfo.size > off + size ? off + size : fileInfo.size
@@ -401,7 +455,9 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     }
     
     r = ec->put(ino, newContent);
-    // std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
+
+    std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
+    lc->release(ino);
     return r;
 }
 
@@ -412,28 +468,33 @@ int yfs_client::unlink(inum parent,const char *name)
      * note: you should remove the file using ec->remove,
      * and update the parent directory content.
      */
+    printf("yfs_client::unlink: inum: %llu\n", parent);
+    lc->acquire(parent);
+    
     bool found;
     inum ino_out;
-    int r = lookup(parent, name, found, ino_out);
+    int r = _lookup(parent, name, found, ino_out);
     if( r != OK || !found ) {
         printf("yfs_client::unlink::error\n");
-        return r;
-    }
-
-    std::string filename = std::string(name);    
-    std::list<dirent> list;
-    readdir(parent, list);
-    std::string newDirContent;
-    std::list<dirent>::iterator it = list.begin();
-    while(it != list.end()) {
-        struct dirent tmp = *it;
-        if(tmp.name != filename) {
-            appendDirContent(newDirContent, tmp.name, tmp.inum);
+    } else {
+        std::string filename = std::string(name);    
+        std::list<dirent> list;
+        _readdir(parent, list);
+        std::string newDirContent;
+        std::list<dirent>::iterator it = list.begin();
+        while(it != list.end()) {
+            struct dirent tmp = *it;
+            if(tmp.name != filename) {
+                appendDirContent(newDirContent, tmp.name, tmp.inum);
+            }
+            it++;
         }
-        it++;
+        r = ec->put(parent, newDirContent);
+        r = ec->remove(ino_out);
     }
-    r = ec->put(parent, newDirContent);
-    r = ec->remove(ino_out);
+    
+    lc->release(parent);
+    
     return r;
 }
 

@@ -6,16 +6,21 @@
 
 #include <string>
 #include <pthread.h>
+#include <map>
 #include "lock_protocol.h"
 #include "lock_client.h"
 #include "rpc.h"
 
+enum LOCK_STATUS{
+    LOCKED,
+    UNLOCKED
+  };
 
 class lock_server {
-
 private: 
-  pthread_cond_t con_lock;
-  pthread_mutex_t mutex;
+  static std::map<lock_protocol::lockid_t, LOCK_STATUS> lockMap;
+  static pthread_cond_t cond_lock;
+  static pthread_mutex_t mutex;
 
 protected:
   int nacquire;

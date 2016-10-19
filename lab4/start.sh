@@ -2,7 +2,6 @@
 
 ulimit -c unlimited
 
-
 LOSSY=$1
 NUM_LS=$2
 
@@ -19,7 +18,6 @@ LOCK_PORT=$[BASE_PORT+6]
 
 YFSDIR1=$PWD/yfs1
 YFSDIR2=$PWD/yfs2
-
 
 if [ "$LOSSY" ]; then
     export RPC_LOSSY=$LOSSY
