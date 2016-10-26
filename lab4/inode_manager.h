@@ -37,6 +37,8 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
+  static pthread_mutex_t mutex;
+  
  public:
   block_manager();
   struct superblock sb;
@@ -90,6 +92,7 @@ class inode_manager {
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
   unsigned int getTime();
+
 
  public:
   inode_manager();

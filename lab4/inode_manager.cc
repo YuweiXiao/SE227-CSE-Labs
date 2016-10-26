@@ -35,6 +35,8 @@ disk::write_block(blockid_t id, const char *buf)
 
 // block layer -----------------------------------------
 
+pthread_mutex_t block_manager::mutex = PTHREAD_MUTEX_INITIALIZER;
+
 // Allocate a free disk block.
 blockid_t
 block_manager::alloc_block()
@@ -49,6 +51,7 @@ alloc
           use bit operation.
           remind yourself of the layout of disk.
    */
+  pthread_mutex_lock(&mutex);
   char buf[BLOCK_SIZE];
   // find the start block index for files
   // start_index = super_block number + bitmap block number + inode block number
@@ -60,11 +63,13 @@ alloc
     if(BIT_STATE(buf[index], offset) == 0) {
       buf[index] = (buf[index] | (1 << offset));
       write_block(BBLOCK(bnum), buf);
+      pthread_mutex_unlock(&mutex);
       return bnum;
     }
     bnum++;
   }
   printf("block_manager::alloc_block::no more storage.\n");
+  pthread_mutex_unlock(&mutex);
   return -1;
 }
 
@@ -91,6 +96,7 @@ block_manager::free_block(uint32_t id)
     return;
   }
   
+  pthread_mutex_lock(&mutex);
   char buf[BLOCK_SIZE];
 
   // unmark bitmap
@@ -100,6 +106,7 @@ block_manager::free_block(uint32_t id)
   buf[index] = (buf[index] & (~(1 << offset)));
   // update bitmap
   write_block(BBLOCK(id), buf);
+  pthread_mutex_unlock(&mutex);
 }
 
 // The layout of disk should be like this:
