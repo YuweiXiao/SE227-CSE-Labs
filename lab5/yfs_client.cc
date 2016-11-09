@@ -80,7 +80,7 @@ yfs_client::isdir(inum inum)
     if ( r != extent_protocol::OK ) {
         printf("error getting attr\n");
     } else if (a.type == extent_protocol::T_DIR) {
-        printf("isfile: %lld is a dir\n", inum);
+        printf("yfs_client::isdir: %lld is a dir\n", inum);
         flag = true;
     } 
     lc->release(inum);
@@ -341,8 +341,8 @@ yfs_client::_readdir(inum dir, std::list<dirent> &list)
      * and push the dirents to the list.
      */
     printf("yfs_client::readdir: inum: %llu\n", dir);
+
     std::string dirContent;
-    std::cout<<"yfs_client::readdir::inum:"<<dir<<std::endl;
     int r = ec->get(dir, dirContent);
     if(r != extent_protocol::OK) {
         printf("yfs_client::readdir::read dir error\n");
@@ -358,7 +358,7 @@ yfs_client::_readdir(inum dir, std::list<dirent> &list)
             p++;
         }
         p++;    // ignore the '*' character
-        // the name must make pare with inum
+        // the name must make pair with inum
         if(p >= dirContent.size()) {
             std::cout<<name<<std::endl;
             printf("yfs_client::readdir::error dir format\n");
@@ -454,6 +454,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         newContent += content.substr(off + size);
     }
     
+    std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;    
     r = ec->put(ino, newContent);
 
     std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;

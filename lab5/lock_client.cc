@@ -32,10 +32,10 @@ lock_client::acquire(lock_protocol::lockid_t lid)
 {
 	// Your lab4 code goes here
   int r;
-  printf("in client acquire\n");
+ // printf("in client acquire\n");
 
   lock_protocol::status ret = cl->call(lock_protocol::acquire, cl->id(), lid, r);
-  printf("in client acquire - finish\n");
+  //printf("in client acquire - finish\n");
   VERIFY (ret == lock_protocol::OK);
   return r;
 }

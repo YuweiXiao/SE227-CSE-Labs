@@ -58,7 +58,7 @@ getattr(yfs_client::inum inum, struct stat &st)
     bzero(&st, sizeof(st));
 
     st.st_ino = inum;
-    printf("getattr %016llx %d\n", inum, yfs->isfile(inum));
+    printf("fuse::getattr %u %d\n", inum, yfs->isfile(inum));
     if(yfs->isfile(inum)){
         yfs_client::fileinfo info;
         ret = yfs->getfile(inum, info);
@@ -227,6 +227,7 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
 #if 1
     // Change the above line to "#if 1", and your code goes here
     int r;
+    printf("in fuseserver_write:inum:%u, size %u, off%u\n", ino, size, off);
     if ((r = yfs->write(ino, size, off, buf, size)) == yfs_client::OK) {
         fuse_reply_write(req, size);
     } else {
