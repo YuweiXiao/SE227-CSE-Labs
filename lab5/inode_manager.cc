@@ -2,11 +2,12 @@
 #include <vector>
 using std::vector;
 
-const int RATE = 2;
+const int RATE = 4;
 const int tBPB = BLOCK_SIZE / RATE * 8;
 
-const int INDIRECT_ELE = BLOCK_SIZE / RATE / sizeof(uint) -1;
+const int INDIRECT_ELE = BLOCK_SIZE / RATE / sizeof(uint);
 const int DOUBLE_INDIRECT_ELE = BLOCK_SIZE / RATE / sizeof(uint);
+const int MY_NDIRECT = ( BLOCK_SIZE - 5 * sizeof(uint) * RATE ) / (sizeof(uint) * RATE);
 
 static uint32_t iBlock(int i, int nblocks) {
 	return ((nblocks)/tBPB + (i)/IPB + 3);
@@ -83,7 +84,7 @@ block_manager::free_block(uint32_t id)
 	 * note: you should unmark the corresponding bit in the block bitmap when free.
 	 */
 	if(id < 0 || id > sb.nblocks) {
-		printf("block_manager::free_bloc::block id is out of range:%u\n", id);
+		printf("block_manager::free_block::block id is out of range:%u\n", id);
 		return;
 	}
 	
@@ -122,17 +123,27 @@ static int checkCharCorrectness(char A, char &ans);
  */
 static char constructCodedChar(char A) {
 	char t = 0;
-	char p3 = (A>>3)&1; //a
-	char p5 = (A>>2)&1; //b
-	char p6 = (A>>1)&1; //c
-	char p7 = (A>>0)&1; //d
-	t = t | ((p7^p5^p3) << 7);
-	t = t | ((p7^p6^p3) << 6);
-	t = t | ((p7^p6^p5) << 4);
-	t = t | (p3 << 5);
-	t = t | (p5 << 3);
-	t = t | (p6 << 2);
-	t = t | (p7 << 1);
+	char a = (A>>3)&1; //a
+	char b = (A>>2)&1; //b
+	char c = (A>>1)&1; //c
+	char d = (A>>0)&1; //d
+	t = t | ((b^c^d) << 4);
+	t = t | ((a^c^d) << 5);
+	t = t | ((a^b^d) << 6);
+	t = t | ((a^b^c) << 7);
+	t = t | (A & ((1<<4) - 1));
+
+	// char p3 = (A>>3)&1; //a
+	// char p5 = (A>>2)&1; //b
+	// char p6 = (A>>1)&1; //c
+	// char p7 = (A>>0)&1; //d
+	// t = t | ((p7^p5^p3) << 7);
+	// t = t | ((p7^p6^p3) << 6);
+	// t = t | ((p7^p6^p5) << 4);
+	// t = t | (p3 << 5);
+	// t = t | (p5 << 3);
+	// t = t | (p6 << 2);
+	// t = t | (p7 << 1);
 
 	return t;
 }
@@ -146,48 +157,76 @@ static char constructCodedChar(char A) {
  *           2  two bit error
  */
 static int checkCharCorrectness(char A, char &ans) {
-	vector<int> p;
-	for(int i = 7; i >=0; --i) {
+	vector<int> p;  // d, c, b, a, bcd, acd, abd, abc
+	for(int i = 0; i < 8; ++i) {
 		p.push_back((A>>i)&1);
 	}
-	
-	bool p1 = false, p2 = false, p4 = false;
-	if(p[0] != (p[6] ^ p[4] ^ p[2])) 
-		p1 = true;
-	if(p[1] != (p[6] ^ p[5] ^ p[2]))
-		p2 = true;
-	if(p[3] != (p[6] ^ p[5] ^ p[4]))
-		p4 = true;
-	
-	int ret = 0;
-	if(p1 && !p2 && !p4) {
-		ret = 1;
-		p[0] = p[6] ^ p[4] ^ p[2];
-	} else if(!p1 && p2 && !p4) {
-		ret = 1;
-		p[1] = p[6] ^ p[5] ^ p[2];
-	} else if(!p1 && !p2 && p4) {
-		ret = 1;
-		p[3] = p[6] ^ p[5] ^ p[4];
-	} else if(p1 && p2 && !p4) {
-		ret = 1;
+	bool p1 = p[0]^p[1]^p[2]^p[4];
+	bool p2 = p[3]^p[1]^p[0]^p[5];
+	bool p3 = p[3]^p[2]^p[0]^p[6];
+	bool p4 = p[3]^p[2]^p[1]^p[7];
+
+	int ret = 1;
+	if(p1 && p2 && !p3 && p4) {
+		p[1] = p[1] ^ 1;
+	} else if(p1 && !p2 && p3 && p4) {
 		p[2] = p[2] ^ 1;
-	} else if(p1 && !p2 && p4) {
-		ret = 1;
-		p[4] = p[4] ^ 1;
-	} else if(!p1 && p2 && p4) {
-		ret = 1;
-		p[5] = p[5] ^ 1;
-	} else if(p1 && p2 && p4) {
-		ret = 1;
-		p[6] = p[6] ^ 1;
-	} else if(!p1 && !p2 && !p4) {
+	} else if(!p1 && p2 && p3 && p4) {
+		p[3] = p[3] ^ 1;
+	} else if(p1 && p2 && p3 && !p4) {
+		p[0] = p[0] ^ 1;
+	} else if(!p1 && !p2 && !p3 && !p4) {
 		ret = 0;
+	} else if(!p1 && !p2 && !p3 && p4){
+		ret = 1;
+	} else if(!p1 && !p2 && p3 && !p4){
+		ret = 1;
+	} else if(!p1 && p2 && !p3 && !p4){
+		ret = 1;
+	} else if(p1 && !p2 && !p3 && !p4){
+		ret = 1;
 	} else {
-		return ret = 2;
+		ret = 2;
 	}
 
-	ans = (p[2] << 3) | (p[4] << 2) | (p[5] << 1) | (p[6]);
+	// bool p1 = false, p2 = false, p4 = false;
+	// if(p[0] != (p[6] ^ p[4] ^ p[2])) 
+	// 	p1 = true;
+	// if(p[1] != (p[6] ^ p[5] ^ p[2]))
+	// 	p2 = true;
+	// if(p[3] != (p[6] ^ p[5] ^ p[4]))
+	// 	p4 = true;
+	
+	// int ret = 0;
+	// if(p1 && !p2 && !p4) {
+	// 	ret = 1;
+	// 	p[0] = p[6] ^ p[4] ^ p[2];
+	// } else if(!p1 && p2 && !p4) {
+	// 	ret = 1;
+	// 	p[1] = p[6] ^ p[5] ^ p[2];
+	// } else if(!p1 && !p2 && p4) {
+	// 	ret = 1;
+	// 	p[3] = p[6] ^ p[5] ^ p[4];
+	// } else if(p1 && p2 && !p4) {
+	// 	ret = 1;
+	// 	p[2] = p[2] ^ 1;
+	// } else if(p1 && !p2 && p4) {
+	// 	ret = 1;
+	// 	p[4] = p[4] ^ 1;
+	// } else if(!p1 && p2 && p4) {
+	// 	ret = 1;
+	// 	p[5] = p[5] ^ 1;
+	// } else if(p1 && p2 && p4) {
+	// 	ret = 1;
+	// 	p[6] = p[6] ^ 1;
+	// } else if(!p1 && !p2 && !p4) {
+	// 	ret = 0;
+	// } else {
+	// 	return ret = 2;
+	// }
+
+	//ans = (p[2] << 3) | (p[4] << 2) | (p[5] << 1) | (p[6]);
+	ans = (p[3] << 3) | (p[2] << 2) | (p[1] << 1) | (p[0]);
 	return ret;
 }
 
@@ -201,23 +240,34 @@ block_manager::read_block(uint32_t id, char *buf)
 	d->read_block(id, codedBuf);
 
 	int currentIndex = 0;
+	bool flag = 0;
 	for(int i = 0; i < BLOCK_SIZE / RATE; ++i) {
 		int tAns = 0;
 		char t;
 		int ret = checkCharCorrectness(codedBuf[currentIndex], t);
+		if(ret != 0) {
+			flag = true;
+		}
 		if(ret == 2) {
 			printf("!@#!@$!@#!@#!@# hhhhhhhhhhhhhhhhhhhhhhh\n");
-			// checkCharCorrectness(codedBuf[currentIndex + 1], t);
+			checkCharCorrectness(codedBuf[currentIndex + 1], t);
 		} 
 		tAns = t << 4;
-		ret = checkCharCorrectness(codedBuf[currentIndex + 1], t);
+		ret = checkCharCorrectness(codedBuf[currentIndex + 2], t);
+		if(ret != 0) {
+			flag = true;
+		}
 		if(ret == 2) {
 			printf("!@#!@$!@#!@#!@# hhhhhhhhhhhhhhhhhhhhhhh\n");
-			// checkCharCorrectness(codedBuf[currentIndex + 1], t);
+			checkCharCorrectness(codedBuf[currentIndex + 3], t);
 		} 
 		tAns = tAns | t;
 		buf[i] = tAns;
-		currentIndex += 2;
+		currentIndex += 4;
+	}
+
+	if(flag) {
+		write_block(id, buf);
 	}
 	// printf("read:inum:%u  content:%s\n", id, buf);
 }
@@ -233,10 +283,10 @@ block_manager::write_block(uint32_t id, const char *buf)
 	for(int i = 0; i < BLOCK_SIZE / RATE; ++i) {
 
 		codedBuf[currentIndex] = constructCodedChar((buf[i] >> 4) & mask);
-		// codedBuf[currentIndex + 1] = codedBuf[currentIndex];
-		codedBuf[currentIndex + 1] = constructCodedChar(buf[i] & mask);
-		// codedBuf[currentIndex + 3] = codedBuf[currentIndex + 2];
-		currentIndex += 2;
+		codedBuf[currentIndex + 1] = codedBuf[currentIndex];
+		codedBuf[currentIndex + 2] = constructCodedChar(buf[i] & mask);
+		codedBuf[currentIndex + 3] = codedBuf[currentIndex + 2];
+		currentIndex += 4;
 	}
 
 	d->write_block(id, codedBuf);
@@ -323,6 +373,7 @@ inode_manager::free_inode(uint32_t inum)
 	 * if not, clear it, and remember to write back to disk.
 	 * do not forget to free memory if necessary.
 	 */
+	printf("inode_manager::free_inode: inum %u\n", inum);
 	if (inum < 0 || inum >= bm->sb.ninodes) {
 		printf("inode_manager::free_inode: inum out of range:%u\n", inum);
 		return ;
@@ -397,7 +448,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 	 * and copy them to buf_out
 	 */
 	
-	printf("inode_manager::read_file : inum:%u  size:%d\n", inum, *size);
+	// printf("inode_manager::read_file : inum:%u  size:%d\n", inum, *size);
 	if(inum < 0 || inum > bm->sb.ninodes || buf_out == NULL || size == NULL || *size < 0) {
 		printf("inode_manager::read_file::parameters error\n");
 		return;
@@ -421,29 +472,17 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 	}
 	*size = MIN((uint32_t)*size, ino_disk->size);
 	char *content = (char*)malloc(sizeof(char)*(*size));
-	printf("inode_manager::read_file : file-size:%u\n", ino_disk->size);
+	// printf("inode_manager::read_file : file-size:%u\n", ino_disk->size);
 
 	// p : current content pointer, 
 	int p = 0;
-
-	// get block content according to direct blocks
+	char indirectINode[BLOCK_SIZE];
 	for(int i = 0; i < NDIRECT && p < *size; ++i) {
-		bm->read_block(ino_disk->blocks[i], blockBuf);
-		printf("inode_manager::read_file: bnum:%u\n", ino_disk->blocks[i]);
-		int tSize = MIN(BLOCK_SIZE / RATE, *size - p);
-		memcpy(content + p, blockBuf, tSize);
-		p += tSize;
-	}
-
-	// if there is more content in indirect blocks
-	if(p < *size) {
 		// get the indirect block
-		char indirectINode[BLOCK_SIZE];
-		bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+		bm->read_block(ino_disk->blocks[i], indirectINode);
 		uint *blocks = (uint*)indirectINode;
-
-		for(uint32_t i = 0; i < NINDIRECT && p < *size; ++i) {
-			bm->read_block( blocks[i], blockBuf);
+		for(uint32_t j = 0; j < INDIRECT_ELE && p < *size; ++j) {
+			bm->read_block( blocks[j], blockBuf);
 			int tSize = MIN(BLOCK_SIZE / RATE, *size - p);
 			memcpy(content + p, blockBuf, tSize);
 			p += tSize;
@@ -452,8 +491,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 
 	// set return value
 	*buf_out = content;
-
-	printf("inode_manager::read_file : finished\n");
+	// printf("inode_manager::read_file : finished\n");
 }
 
 /* alloc/free blocks if needed */
@@ -467,13 +505,13 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	 * is larger or smaller than the size of original inode.
 	 * you should free some blocks if necessary.
 	 */
-	printf("inode_manager::write_file, inum:%u - size :%d\n", inum, size);
+	// printf("inode_manager::write_file, inum:%u - size :%d\n", inum, size);
 	
 	if(inum < 0 || inum > bm->sb.ninodes || buf == NULL || size < 0) {
 		printf("inode_manager::write_file:error parameters\n");
 		return;
 	}
-	if((uint32_t)size > (NDIRECT + INDIRECT_ELE) * BLOCK_SIZE / RATE) {
+	if((uint32_t)size > (INDIRECT_ELE * NDIRECT) * BLOCK_SIZE / RATE) {
 		printf("inode_manager::write_file:file to write is too big, size:%d\n", size);
 		return; 
 	}
@@ -499,38 +537,24 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	// p : current content pointer, 
 	int p = 0;
 	
-	// store content into direct blocks
-	int i = 0;
+	uint32_t i = 0;
+	uint32_t index = 0;
 	blockid_t bnum;
+	char indirectINode[BLOCK_SIZE];
 	for(; i < NDIRECT && p < size; ++i) {
-		int tSize = MIN(BLOCK_SIZE / RATE, size - p);
-		memcpy(blockBuf, buf + p, tSize);
-		if(i < originBlockNum) {
-			bnum = ino_disk->blocks[i];
-		} else {
-			bnum = bm->alloc_block();
-			ino_disk->blocks[i] = bnum;  
-		}
-		// printf("inode_manager::write_file: write block bnum:%d \n", bnum);
-		bm->write_block(bnum, blockBuf);
-		p = p + tSize;
-	}
-	// if there is more content to write, store in indirect blocks
-	if(p < size) {
-		if(i > originBlockNum) {
-			ino_disk->blocks[NDIRECT] = bm->alloc_block();
-		}
-		
-		// get the indirect block
-		char indirectINode[BLOCK_SIZE];
-		bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+		if( i * INDIRECT_ELE >= originBlockNum ) {
+			ino_disk->blocks[i] = bm->alloc_block();
+			// printf("new alooc indirect block inum:%u\n", ino_disk->blocks[i]);
+		} 
+		bm->read_block(ino_disk->blocks[i], indirectINode);
 		uint *blocks = (uint*)indirectINode;
-		uint32_t index = 0;
-		while(p < size && index < INDIRECT_ELE - 1) {
-			printf("fetch content in indirect block index:%u\n", index);
+		index = 0;
+
+		while(p < size && index < INDIRECT_ELE) {
+			// printf("fetch content in indirect block index:%u\n", index);
 			int tSize = MIN(BLOCK_SIZE / RATE, size - p);
 			memcpy(blockBuf, buf + p, tSize);
-			if(i < originBlockNum) {
+			if(i * INDIRECT_ELE + index < originBlockNum) {
 				bnum = blocks[index];
 			} else {
 				bnum = bm->alloc_block();
@@ -539,50 +563,52 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 			bm->write_block(bnum, blockBuf);
 			p = p + tSize;
 			index++;
-			i++;
 		}
-		// if(p < size) {
-		// 	if( i > originBlockNum) {
-		// 		indirectINode[INDIRECT_ELE] = bm->alloc_block();
-		// 		char doubleIndirectINode[BLOCK_SIZE];
-				
-		// 	}
-		// }
-		bm->write_block(ino_disk->blocks[NDIRECT], indirectINode);
+		bm->write_block(ino_disk->blocks[i], indirectINode);
 	}
 
 	//free unused block
-	int blockCount = i + 1;
+	uint32_t blockCount = i * INDIRECT_ELE + index;
 	if(size == 0) {
 		blockCount = 0;
 	}
-	if(originBlockNum > blockCount) {
-		printf("inode_manager::write_file: freeing unused block\n");
-		// free direct blocks
-		for(int j = blockCount; j < NDIRECT && j < originBlockNum; ++j) {
-			bm->free_block(ino_disk->blocks[j]);
+	while(originBlockNum > blockCount) {
+		printf("inode_manager::write_file: freeing unused block : i = %u\n", i);
+		bm->read_block(ino_disk->blocks[i], indirectINode);
+		uint *blocks = (uint*)indirectINode;
+		while(index < INDIRECT_ELE && blockCount < originBlockNum) {
+			bm->free_block(blocks[index]);
+			++index;
+			++blockCount;
 		}
-		// free indirect blocks
-		if(originBlockNum >= NDIRECT) {
-			printf("inode_manager::write_file: freeing undirect unused block\n");
-			char indirectINode[BLOCK_SIZE];
-			bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
-			uint *blocks = (uint*)indirectINode;
-			int j = blockCount >= NDIRECT ? blockCount - NDIRECT + 1 : NDIRECT - NDIRECT;
-			while(NDIRECT + j < originBlockNum) {
-				bm->free_block(blocks[j]);
-				j++;
-			}
-			if(blockCount < NDIRECT) {
-				bm->free_block(ino_disk->blocks[NDIRECT]);
-			}
-		}
+		++i;
+		index = 0;
 	}
+
+	// for(int j = blockCount; j < NDIRECT && j < originBlockNum; ++j) {
+	// 		bm->free_block(ino_disk->blocks[j]);
+	// 	}
+	// 	// free indirect blocks
+	// 	if(originBlockNum >= NDIRECT) {
+	// 		printf("inode_manager::write_file: freeing undirect unused block\n");
+	// 		char indirectINode[BLOCK_SIZE];
+	// 		bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+	// 		uint *blocks = (uint*)indirectINode;
+	// 		int j = blockCount >= NDIRECT ? blockCount - NDIRECT + 1 : NDIRECT - NDIRECT;
+	// 		while(NDIRECT + j < originBlockNum) {
+	// 			bm->free_block(blocks[j]);
+	// 			j++;
+	// 		}
+	// 		if(blockCount < NDIRECT) {
+	// 			bm->free_block(ino_disk->blocks[NDIRECT]);
+	// 		}
+	// 	}
+	// }
 
 	ino_disk->size = size;
 	// bm->write_block(iBlock(inum), ino_disk);
 	put_inode(inum, ino_disk);
-	printf("inode_manager::write_file:: put file finished.\n");
+	// printf("inode_manager::write_file:: put file finished.\n");
 }
 
 void
@@ -617,39 +643,35 @@ inode_manager::remove_file(uint32_t inum)
 	 * note: you need to consider about both the data block and inode of the file
 	 * do not forget to free memory if necessary.
 	 */
-	
+	printf("inode_manager::remove_file: inum:%u\n", inum);
+
 	// get inode
 	char inodeBuf[BLOCK_SIZE];
 	struct inode* ino_disk;
 	bm->read_block(iBlock(inum, bm->sb.nblocks), inodeBuf);
 	ino_disk = (struct inode*)inodeBuf + inum%IPB;
-	// printf("inode_manager::remove_file: inum:%u\n", inum);
 
 	int fileSize = ino_disk->size;
 	int p = 0;
-
+	printf("inode_manager::remove_file::filesize:%d\n", fileSize);
 	// free inode first, for sake of security.
 	free_inode(inum);
-	
+
+	char indirectINode[BLOCK_SIZE];
 	for(int i = 0; i < NDIRECT && p < fileSize; ++i) {
-		// printf("%inode_manager::remove_file: bnum:%d\n", ino_disk->blocks[i]);
-		bm->free_block(ino_disk->blocks[i]);
-		p += BLOCK_SIZE / RATE;
-	}
-
-	// there are more data to release
-	if( p < fileSize) {
 		// get the indirect block
-		char indirectINode[BLOCK_SIZE];
-		bm->read_block(ino_disk->blocks[NDIRECT], indirectINode);
+		bm->read_block(ino_disk->blocks[i], indirectINode);
 		// need to free the indirect inode first, for sake of security
-		bm->free_block(ino_disk->blocks[NDIRECT]);
-
+		// printf("inode_manager::remove_file: bnum:%d\n", ino_disk->blocks[i]);
+		bm->free_block(ino_disk->blocks[i]);
+		
+		
 		uint* blocks = (uint *)indirectINode;
 		int index = 0;
-		while(p < fileSize) {
+		while(p < fileSize && index < INDIRECT_ELE) {
+			// printf("inode_manager::remove_block: bnum:%u\n", blocks[index]);
 			bm->free_block(blocks[index]);
-			index++;
+			++index;
 			p += BLOCK_SIZE / RATE;
 		}
 	}

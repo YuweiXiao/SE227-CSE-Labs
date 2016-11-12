@@ -431,7 +431,10 @@ main(int argc, char *argv[])
 
   setbuf(stdout, 0);
 
-	srand((unsigned)time(NULL));
+  uint t = (unsigned)time(NULL);
+  printf("random:%u\n", t);
+	srand(t);
+  // srand(1478914161);
 
 	for(i = 0; i < sizeof(normal)-1; ++i)
 		normal[i] = '0' + rand() % 10;
@@ -594,7 +597,6 @@ main(int argc, char *argv[])
   printf("OK\n");
 
   printf("Concurrent writes to different parts of same file: ");
-  printf("huge size%u\n", strlen(huge));
   create1(d1, "www", huge);
   printf("create huge complete.\n");
   pid = fork();
@@ -604,17 +606,14 @@ main(int argc, char *argv[])
   }
   if(pid == 0){
     write1(d2, "www", 10000, 64, '2');
-    printf("thread write complete - 2.\n");  
     exit(0);
   }
   write1(d1, "www", 0, 64, '1');
-  printf("thread write complete - 1.\n");
   reap(pid);
   checkread(d1, "www", 0, 64, '1');
   checkread(d2, "www", 0, 64, '1');
   checkread(d1, "www", 10000, 64, '2');
   checkread(d2, "www", 10000, 64, '2');
-  printf("check\n");
 	unlink1(d1, "www");
   printf("OK\n");
 	

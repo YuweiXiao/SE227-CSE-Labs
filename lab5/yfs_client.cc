@@ -236,7 +236,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
         return r;
     }
     appendDirContent(dirContent, name, ino_out);
-    std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
+    // std::cout<<"yfs_client::create:dir content:"<<dirContent<<std::endl;
     r = ec->put(parent, dirContent);
 
     lc->release(parent);
@@ -348,7 +348,7 @@ yfs_client::_readdir(inum dir, std::list<dirent> &list)
         printf("yfs_client::readdir::read dir error\n");
         return r;
     }
-    std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
+    // std::cout<<"yfs_client::readdir::dircontent:"<<dirContent<<std::endl;
     size_t p = 0;
     while(p != dirContent.size()) {
         std::string name;
@@ -368,7 +368,7 @@ yfs_client::_readdir(inum dir, std::list<dirent> &list)
         size_t num_pos = dirContent.find(' ', p);
         entry.inum = n2i(dirContent.substr(p, num_pos - p));
         p = num_pos + 1;
-        std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
+        // std::cout<<"yfs_client::readdir::filename:"<<name<<";inum:"<<entry.inum<<std::endl;
         list.push_back(entry);
     }
     return r;
@@ -428,7 +428,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     if( off < 0 ) {
         off = 0;
     }
-    std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    // std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
     struct fileinfo fileInfo;
     std::string content;
     int r = _getfile(ino, fileInfo);
@@ -454,10 +454,10 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         newContent += content.substr(off + size);
     }
     
-    std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;    
+    // std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;    
     r = ec->put(ino, newContent);
 
-    std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
+    // std::cout<<"yfs_client::write::data::new content size:"<<newContent.size()<<std::endl;
     lc->release(ino);
     return r;
 }

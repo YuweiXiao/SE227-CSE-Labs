@@ -104,7 +104,10 @@ static void* test_daemon(void* arg)
 	blocks = (unsigned char*)arg;
 	//pthread_detach(pthread_self());
 	printf("[daemon] 0x%lx\n", pthread_self());
-	srand((unsigned)time(NULL));
+	uint t = (unsigned)time(NULL);
+	printf("random t2 : %u\n", t);
+	srand(t);
+	// srand(1478914120);
 
 	key = ftok(PATH, ID); 
 	if(key == -1)

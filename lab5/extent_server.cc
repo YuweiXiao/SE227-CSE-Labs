@@ -30,7 +30,6 @@ int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &)
   const char * cbuf = buf.c_str();
   int size = buf.size();
   im->write_file(id, cbuf, size);
-  printf("extent_server::put::return from im write_file\n");
   return extent_protocol::OK;
 }
 
