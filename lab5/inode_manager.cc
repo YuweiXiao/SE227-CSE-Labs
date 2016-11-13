@@ -71,7 +71,7 @@ alloc
 }
 
 // used for test
-static void printBit(char c) {
+void printBit(char c) {
 	for(int i = 7; i >= 0; --i){
 		if(c & (1<<i))
 			printf("1");
@@ -535,7 +535,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	//std::cout<<"inode_manager::write_file::time:"<<ino_disk->atime<<std::endl;
 
 
-	int originBlockNum = (ino_disk->size + BLOCK_SIZE / RATE - 1) / (BLOCK_SIZE / RATE);
+	uint32_t originBlockNum = (ino_disk->size + BLOCK_SIZE / RATE - 1) / (BLOCK_SIZE / RATE);
 	if(ino_disk->size == 0) {
 		originBlockNum = 0;
 	}
