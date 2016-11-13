@@ -9,21 +9,26 @@ const int INDIRECT_ELE = BLOCK_SIZE / RATE / sizeof(uint);
 const int DOUBLE_INDIRECT_ELE = BLOCK_SIZE / RATE / sizeof(uint);
 const int MY_NDIRECT = ( BLOCK_SIZE - 5 * sizeof(uint) * RATE ) / (sizeof(uint) * RATE);
 
-static uint32_t iBlock(int i, int nblocks) {
-	return ((nblocks)/tBPB + (i)/IPB + 3);
-}     
+#define iBlock(i, nblocks)  ((nblocks)/tBPB + (i)/IPB + 3)
+#define bBlock(num)  ((num)/tBPB + 2)
+#define blockBitmapIndex(num) (((num) % tBPB) / 8)
+#define blockBitmapOffset(num)  (7 - ((num) % tBPB) % 8)
 
-static uint32_t bBlock(int num) {
-	return ((num)/tBPB + 2);
-}
+// static inline uint32_t iBlock(int i, int nblocks) {
+// 	return ((nblocks)/tBPB + (i)/IPB + 3);
+// }     
 
-static uint32_t blockBitmapIndex(int num) {
-	return (((num) % tBPB) / 8);
-}
+// static inline uint32_t bBlock(int num) {
+// 	return ((num)/tBPB + 2);
+// }
 
-static uint32_t blockBitmapOffset(int num) {
-	return (7 - ((num) % tBPB) % 8);
-}
+// static inline uint32_t blockBitmapIndex(int num) {
+// 	return (((num) % tBPB) / 8);
+// }
+
+// static inline uint32_t blockBitmapOffset(int num) {
+// 	return (7 - ((num) % tBPB) % 8);
+// }
 
 // block layer -----------------------------------------
 
