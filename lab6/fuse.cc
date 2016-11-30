@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <signal.h> 
 #include "lang/verify.h"
 #include "yfs_client.h"
 
@@ -23,6 +24,21 @@ yfs_client *yfs;
 
 int id() { 
     return myid;
+}
+
+void sig_handler(int no) {
+    std::cout<<"in sig handler"<<std::endl;
+    switch (no) {
+    case SIGINT:
+        printf("commit a new version\n");
+        break;
+    case SIGUSR1:
+        printf("to previous version\n");
+        break;
+    case SIGUSR2:
+        printf("to next version\n");
+        break;
+    }
 }
 
 void fuseserver_readlink(fuse_req_t req, fuse_ino_t ino) {
@@ -540,6 +556,11 @@ main(int argc, char *argv[])
     yfs = new yfs_client(argv[2], argv[3]);
 
     // yfs = new yfs_client();
+
+    signal(SIGINT, sig_handler); 
+    signal(SIGUSR1, sig_handler); 
+    signal(SIGUSR2, sig_handler); 
+    
 
     fuseserver_oper.getattr    = fuseserver_getattr;
     fuseserver_oper.statfs     = fuseserver_statfs;
