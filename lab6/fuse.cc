@@ -48,7 +48,7 @@ public:
         maxVersion += 1;
     }
     void rollback() {
-        if(curVersion == 0) {
+        if(curVersion == -1) {
             printf("it is already the oldest version, nothing to rollback\n");
             return;
         }
@@ -85,48 +85,6 @@ public:
         out<<content<<std::endl<<END<<std::endl;
     }
 private:
-    // TODO use struct Op
-    void redo() {
-        std::ifstream in("log.me");
-        std::string op, t;
-        int version;
-        fuse_ino_t inode;
-        while(in>>version) {
-            int flag = 0;
-            if(version != curVersion) {
-                flag = 1;
-            }
-            in>>op;
-            if(op == CREATE) {
-                mode_t mode;
-                int type;
-                struct fuse_entry_param e;
-                in>>inode>>mode>>type;
-                std::string name = getStringUtilEnd(in);
-                // yfs->unlink(inode, name.c_str());
-                if(flag == 0) {
-                    //TODO can not use create helper   
-                    fuseserver_createhelper(inode, name.c_str(), mode, &e, type);
-                }
-            } else if(op == WRITE) {
-                size_t size;
-                off_t off;
-                in>>inode>>size>>off;
-                std::string origin = getStringUtilEnd(in);
-                std::string content = getStringUtilEnd(in);
-                if(flag == 0) {
-                    yfs->clear(inode);
-                    yfs->write(inode, -1, 0, content.c_str(), size);
-                }
-            } else if(op == UNLINK) {
-                int mode;
-                in>>inode>>mode;
-                std::string name = getStringUtilEnd(in);
-                if(flag == 0)
-                    yfs->unlink(inode, name.c_str());
-            }
-        }
-    }
 
     struct Op
     {
@@ -139,10 +97,61 @@ private:
         std::string origin, content;
     };
 
+    void redo() {
+        std::ifstream in("log.me");
+        std::string oper;
+        int version;
+        printf("in redo: curVersion:%d\n", curVersion);
+        while(in>>version) {
+            // printf("in redo: version:%d\n", version);
+            int flag = 0;
+            struct Op op;
+            if(version != curVersion) {
+                flag = 1;
+            }
+            in>>oper;
+            if(oper == CREATE) {
+                // out<<curVersion<<' '<<CREATE<<' '<<parent<<' '<<mode<<' '<<type<<std::endl;
+                // write(name);
+                in>>op.inode>>op.mode>>op.type;
+                op.content = getStringUtilEnd(in);
+                if(flag == 0) {
+                    printf("in redo: CREATE: name%s\n", op.content.c_str());
+                    long long unsigned ino;
+                    if ( op.type == extent_protocol::T_FILE )
+                        yfs->create(op.inode, op.content.c_str(), op.mode, ino);
+                    else 
+                        yfs->mkdir(op.inode, op.content.c_str(), op.mode, ino);
+                }
+            } else if(oper == WRITE) {
+                // out<<curVersion<<' '<<WRITE<<' '<<ino<<' '<<size<<' '<<off<<std::endl;
+                in>>op.inode>>op.size>>op.off;
+                op.origin = getStringUtilEnd(in);
+                op.content = getStringUtilEnd(in);
+                if(flag == 0) {
+                    printf("in redo: WRITE: inode:%lu, content:%s\n", op.inode, op.content.c_str());
+                    yfs->clear(op.inode);
+                    yfs->write(op.inode, op.content.size(), 0, op.content.c_str(), op.size);
+                }
+            } else if(oper == UNLINK) {
+                // out<<curVersion<<' '<<UNLINK<<' '<<parent<<' '<<type<<std::endl;
+                // write(name);
+                // write(content);
+                in>>op.inode>>op.mode;
+                op.origin = getStringUtilEnd(in);
+                op.content = getStringUtilEnd(in);
+                if(flag == 0) {
+                    printf("in redo:unlink: inode:%lu\n", op.inode);
+                    yfs->unlink(op.inode, op.origin.c_str());
+                }
+            }
+        }
+    }
+
     void undo() {
         std::vector<Op> opVec;
         std::ifstream in("log.me");
-        std::string oper, t;
+        std::string oper;
         int version;
         while(in>>version) {
             int flag = 0;
@@ -176,22 +185,22 @@ private:
                 opVec.push_back(op);
         }
         printf("current version:%d\n", curVersion);
-        printf("fuse.cc:undo:operation num:%u\n", opVec.size());
+        printf("fuse.cc:undo:operation num:%lu\n", opVec.size());
         for(int i = opVec.size() - 1; i >= 0; --i) {
             struct Op op = opVec[i]; 
             size_t byteWritten;
             switch(op.kind) {
                 case 0: //create
-                    printf("undo:create:inode:%u\n", op.inode);
+                    printf("undo:create:inode:%lu\n", op.inode);
                     yfs->unlink(op.inode, op.content.c_str());
                     break;
                 case 1: //write
-                    printf("undo:write:inode:%u\n", op.inode);
+                    printf("undo:write:inode:%lu\n", op.inode);
                     yfs->clear(op.inode);
                     yfs->write(op.inode, op.origin.size(), 0, op.origin.c_str(), byteWritten);
                     break;
                 case 2: { // unlink
-                    printf("undo:unlink:parent inode:%d, name:%s\n", op.inode, op.origin.c_str());
+                    printf("undo:unlink:parent inode:%ld, name:%s\n", op.inode, op.origin.c_str());
                     long long unsigned ino;
                     op.mode = 0; 
                     if(op.type == extent_protocol::T_SYMLNK) {
@@ -202,15 +211,6 @@ private:
                     else 
                         yfs->mkdir(op.inode, op.origin.c_str(), op.mode, ino);
                     
-                    // if(op.type == T_SYMLNK) {
-                    //     op.mode = S_IFLNK;
-                    //     yfs->create(op.inode, op.origin.c_str(), S_IFLNK, ino);
-                    // } else if (op.mode & S_IFREG) {
-                    //     yfs->create(op.inode, op.origin.c_str(), op.mode, ino);
-                    // } else {
-                    //     yfs->mkdir(op.inode, op.origin.c_str(), op.mode, ino);
-                    // }
-
                     yfs->write(ino, op.content.size(), 0, op.content.c_str(), byteWritten);
                 }
                 break;
