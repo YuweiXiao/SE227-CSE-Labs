@@ -72,6 +72,7 @@ class yfs_client {
   int symlink(inum, const char *, const char *, inum&);
 
   int readdir(inum, std::list<dirent> &);
+  int clear(inum);
   int write(inum, size_t, off_t, const char *, size_t &);
   int read(inum, size_t, off_t, std::string &);
   int unlink(inum,const char *);

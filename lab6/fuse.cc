@@ -5,7 +5,8 @@
  * have to use low-level interface in order to get i-numbers.  the
  * high-level interface only gives us complete paths.
  */
-
+#include <fstream>
+#include <vector>
 #include <fuse_lowlevel.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,16 +27,236 @@ int id() {
     return myid;
 }
 
+yfs_client::status
+fuseserver_createhelper(fuse_ino_t parent, const char *name,
+        mode_t mode, struct fuse_entry_param *e, int type);
+
+
+class yfs_log {
+public:
+    yfs_log() 
+        :out("log.me") {
+        curVersion = 0;
+        maxVersion = 0;
+    }
+    void commit() {
+        if(curVersion < maxVersion) {
+            printf("can not commit in a old version\n");
+            return;
+        }
+        curVersion += 1;
+        maxVersion += 1;
+    }
+    void rollback() {
+        if(curVersion == 0) {
+            printf("it is already the oldest version, nothing to rollback\n");
+            return;
+        }
+        undo();
+        curVersion--;
+    }
+    void next() {
+        if(curVersion == maxVersion) {
+            printf("it is already newest version, nothing next\n");
+        }
+        curVersion++;
+        redo();
+    }
+    void createLOG(fuse_ino_t parent, const char *name, mode_t mode, int type) {
+        out<<curVersion<<' '<<CREATE<<' '<<parent<<' '<<mode<<' '<<type<<std::endl;
+        write(name);
+    }
+    
+    void writeLOG(fuse_ino_t ino, const char *buf, size_t size, off_t off) {
+        out<<curVersion<<' '<<WRITE<<' '<<ino<<' '<<size<<' '<<off<<std::endl;
+    }
+
+    void unlinkLOG(fuse_ino_t parent, const char *name, int type, std::string content) {
+        out<<curVersion<<' '<<UNLINK<<' '<<parent<<' '<<type<<std::endl;
+        write(name);
+        write(content);
+    }
+
+    void write(const char * content) {
+        out<<content<<std::endl<<END<<std::endl;
+    }
+
+    void write(std::string content) {
+        out<<content<<std::endl<<END<<std::endl;
+    }
+private:
+    // TODO use struct Op
+    void redo() {
+        std::ifstream in("log.me");
+        std::string op, t;
+        int version;
+        fuse_ino_t inode;
+        while(in>>version) {
+            int flag = 0;
+            if(version != curVersion) {
+                flag = 1;
+            }
+            in>>op;
+            if(op == CREATE) {
+                mode_t mode;
+                int type;
+                struct fuse_entry_param e;
+                in>>inode>>mode>>type;
+                std::string name = getStringUtilEnd(in);
+                // yfs->unlink(inode, name.c_str());
+                if(flag == 0) {
+                    //TODO can not use create helper   
+                    fuseserver_createhelper(inode, name.c_str(), mode, &e, type);
+                }
+            } else if(op == WRITE) {
+                size_t size;
+                off_t off;
+                in>>inode>>size>>off;
+                std::string origin = getStringUtilEnd(in);
+                std::string content = getStringUtilEnd(in);
+                if(flag == 0) {
+                    yfs->clear(inode);
+                    yfs->write(inode, -1, 0, content.c_str(), size);
+                }
+            } else if(op == UNLINK) {
+                int mode;
+                in>>inode>>mode;
+                std::string name = getStringUtilEnd(in);
+                if(flag == 0)
+                    yfs->unlink(inode, name.c_str());
+            }
+        }
+    }
+
+    struct Op
+    {
+        int kind;
+        fuse_ino_t inode;
+        mode_t mode;
+        int type;
+        size_t size;
+        off_t off;
+        std::string origin, content;
+    };
+
+    void undo() {
+        std::vector<Op> opVec;
+        std::ifstream in("log.me");
+        std::string oper, t;
+        int version;
+        while(in>>version) {
+            int flag = 0;
+            struct Op op; 
+            if(version != curVersion) {
+                flag = 1;
+            }
+            in>>oper;
+            if(oper == CREATE) {
+                // out<<curVersion<<' '<<CREATE<<' '<<parent<<' '<<mode<<' '<<type<<std::endl;
+                // write(name);
+                op.kind = 0;
+                in>>op.inode>>op.mode>>op.type;
+                op.content = getStringUtilEnd(in);
+            } else if(oper == WRITE) {
+                // out<<curVersion<<' '<<WRITE<<' '<<ino<<' '<<size<<' '<<off<<std::endl;
+                op.kind = 1;
+                in>>op.inode>>op.size>>op.off;
+                op.origin = getStringUtilEnd(in);
+                op.content = getStringUtilEnd(in);
+            } else if(oper == UNLINK) {
+                // out<<curVersion<<' '<<UNLINK<<' '<<parent<<' '<<s.st_mode<<std::endl;
+                // write(name);
+                // write(content);
+                op.kind = 2;
+                in>>op.inode>>op.type;
+                op.origin = getStringUtilEnd(in);
+                op.content = getStringUtilEnd(in);
+            }   
+            if(flag == 0)
+                opVec.push_back(op);
+        }
+        printf("current version:%d\n", curVersion);
+        printf("fuse.cc:undo:operation num:%u\n", opVec.size());
+        for(int i = opVec.size() - 1; i >= 0; --i) {
+            struct Op op = opVec[i]; 
+            size_t byteWritten;
+            switch(op.kind) {
+                case 0: //create
+                    printf("undo:create:inode:%u\n", op.inode);
+                    yfs->unlink(op.inode, op.content.c_str());
+                    break;
+                case 1: //write
+                    printf("undo:write:inode:%u\n", op.inode);
+                    yfs->clear(op.inode);
+                    yfs->write(op.inode, op.origin.size(), 0, op.origin.c_str(), byteWritten);
+                    break;
+                case 2: { // unlink
+                    printf("undo:unlink:parent inode:%d, name:%s\n", op.inode, op.origin.c_str());
+                    long long unsigned ino;
+                    op.mode = 0; 
+                    if(op.type == extent_protocol::T_SYMLNK) {
+                        op.mode = S_IFLNK;
+                    }
+                    if ( op.type == extent_protocol::T_FILE )
+                        yfs->create(op.inode, op.origin.c_str(), op.mode, ino);
+                    else 
+                        yfs->mkdir(op.inode, op.origin.c_str(), op.mode, ino);
+                    
+                    // if(op.type == T_SYMLNK) {
+                    //     op.mode = S_IFLNK;
+                    //     yfs->create(op.inode, op.origin.c_str(), S_IFLNK, ino);
+                    // } else if (op.mode & S_IFREG) {
+                    //     yfs->create(op.inode, op.origin.c_str(), op.mode, ino);
+                    // } else {
+                    //     yfs->mkdir(op.inode, op.origin.c_str(), op.mode, ino);
+                    // }
+
+                    yfs->write(ino, op.content.size(), 0, op.content.c_str(), byteWritten);
+                }
+                break;
+            }
+        }
+    }
+
+    std::string getStringUtilEnd(std::ifstream &in) {
+        std::string t, ret;
+        while(getline(in, t)) {
+            if( t == END )
+                return ret;
+            ret += t;
+        }
+        printf("should not be here, END not show up.\n");
+        return ret;
+    }
+    int maxVersion;
+    int curVersion;
+    std::ofstream out;
+    static std::string CREATE;
+    static std::string WRITE;
+    static std::string UNLINK;
+    static std::string END;
+};
+
+std::string yfs_log::CREATE = "create";
+std::string yfs_log::WRITE = "write";
+std::string yfs_log::UNLINK = "unlink";
+std::string yfs_log::END = "end";
+
+yfs_log yfs_log;
+
 void sig_handler(int no) {
     std::cout<<"in sig handler"<<std::endl;
     switch (no) {
     case SIGINT:
+        yfs_log.commit();
         printf("commit a new version\n");
         break;
     case SIGUSR1:
+        yfs_log.rollback();
         printf("to previous version\n");
         break;
     case SIGUSR2:
+        yfs_log.next();
         printf("to next version\n");
         break;
     }
@@ -243,8 +464,15 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
 #if 1
     // Change the above line to "#if 1", and your code goes here
     int r;
+    yfs_log.writeLOG(ino, buf, size, off);
+    std::string origin;
+    yfs->read(ino, -1, 0, origin);
     // printf("in fuseserver_write:inum:%u, size %llu, off%llu\n", ino, size, off);
     if ((r = yfs->write(ino, size, off, buf, size)) == yfs_client::OK) {
+        std::string content;
+        yfs->read(ino, -1, 0, content);
+        yfs_log.write(origin);
+        yfs_log.write(content);
         fuse_reply_write(req, size);
     } else {
         fuse_reply_err(req, ENOENT);
@@ -282,13 +510,15 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
     e->entry_timeout = 0.0;
     e->generation = 0;
 
+    yfs_log.createLOG(parent, name, mode, type);
     yfs_client::inum inum;
     if ( type == extent_protocol::T_FILE )
 		ret = yfs->create(parent, name, mode, inum);
 	else 
-		ret = yfs->mkdir(parent,name,mode,inum);
+		ret = yfs->mkdir(parent, name, mode, inum);
     if (ret != yfs_client::OK)
         return ret;
+    
     e->ino = inum;
     ret = getattr(inum, e->attr);
     return ret;
@@ -497,7 +727,19 @@ void
 fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
     int r;
-    if ((r = yfs->unlink(parent, name)) == yfs_client::OK) {
+    //get delete file info and content
+    long long unsigned ino;
+    bool found;
+    yfs->lookup(parent, name, found, ino);
+    int type;
+    if(yfs->isfile(ino)) type = extent_protocol::T_FILE;
+    else if(yfs->isdir(ino)) type = extent_protocol::T_DIR;
+    else type = extent_protocol::T_SYMLNK;
+    std::string content;
+    yfs->read(ino, -1, 0, content);
+    yfs_log.unlinkLOG(parent, name, type, content);
+
+    if ((r = yfs->unlink(parent, name)) == yfs_client::OK) {        
         fuse_reply_err(req, 0);
     } else {
         if (r == yfs_client::NOENT) {
@@ -554,8 +796,6 @@ main(int argc, char *argv[])
 
 
     yfs = new yfs_client(argv[2], argv[3]);
-
-    // yfs = new yfs_client();
 
     signal(SIGINT, sig_handler); 
     signal(SIGUSR1, sig_handler); 

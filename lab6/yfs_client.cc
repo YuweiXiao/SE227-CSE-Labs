@@ -202,7 +202,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
-    printf("yfs_client::create: parent inode: %llu\n", parent);
+    printf("yfs_client::create: parent inode: %llu, name:%s\n", parent, name);
     lc->acquire(parent);
      // check whether filename already exists.
     bool found = false;
@@ -403,12 +403,21 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     }
     if((unsigned long long)off >= fileInfo.size) {
         data = "";
-        std::cout<<"yfs_client:read::data:offset is bigger than size"<<std::endl;
+        std::cout<<"yfs_client:read::data:offset is bigger than size.offset:"<<off<<"file size"<<fileInfo.size<<std::endl;
     } else {
         data = content.substr(off, size);
         // std::cout<<"yfs_client:read::data:"<<data<<std::endl;
     }
     
+    lc->release(ino);
+    return r;
+}
+
+int 
+yfs_client::clear(inum ino) {
+    printf("yfs_client::write: inum: %llu\n", ino);
+    lc->acquire(ino);
+    int r = ec->put(ino, "");
     lc->release(ino);
     return r;
 }
@@ -428,7 +437,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     if( off < 0 ) {
         off = 0;
     }
-    // std::cout<<"yfs_client::write::data:inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
+    std::cout<<"yfs_client::write::data:"<<data<<"inum:"<<ino<<";size:"<<size<<";off:"<<off<<std::endl;
     struct fileinfo fileInfo;
     std::string content;
     int r = _getfile(ino, fileInfo);
@@ -462,7 +471,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     return r;
 }
 
-int yfs_client::unlink(inum parent,const char *name)
+int yfs_client::unlink(inum parent, const char *name)
 {
     /*
      * your lab2 code goes here.
