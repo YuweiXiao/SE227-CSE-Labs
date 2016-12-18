@@ -275,9 +275,9 @@ inode_manager::alloc_inode(uint32_t type, unsigned short uid, unsigned short gid
 		ino_disk = (struct inode*)buf + inum%IPB;
 		if(ino_disk->type == 0) {
 			
-			ino_disk->ctime = getTime();
-			ino_disk->mtime = ino_disk->ctime;
-			ino_disk->atime = ino_disk->ctime;
+			// ino_disk->ctime = getTime();
+			// ino_disk->mtime = ino_disk->ctime;
+			// ino_disk->atime = ino_disk->ctime;
 			ino_disk->type = type;
             ino_disk->uid = uid;
             ino_disk->gid = gid;
@@ -393,7 +393,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   ino_disk = (struct inode*)inodeBuf + inum % IPB;
   
   // update access time
-  ino_disk->atime = getTime();
+  // ino_disk->atime = getTime();
   bm->write_block(IBLOCK(inum, bm->sb.nblocks), inodeBuf);
 
   // get correct size, initialize content buffer
@@ -465,10 +465,10 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   ino_disk = (struct inode*)inodeBuf + inum % IPB;
   
   // update modification time();
-  ino_disk->atime = getTime();
-  ino_disk->mtime = ino_disk->atime;
-  ino_disk->ctime = ino_disk->atime;
-  std::cout<<"inode_manager::write_file::time:"<<ino_disk->atime<<std::endl;
+  // ino_disk->atime = getTime();
+  // ino_disk->mtime = ino_disk->atime;
+  // ino_disk->ctime = ino_disk->atime;
+  // std::cout<<"inode_manager::write_file::time:"<<ino_disk->atime<<std::endl;
 
 
   int originBlockNum = (ino_disk->size + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -570,10 +570,14 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
 	char buf[BLOCK_SIZE];
 	bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
 	struct inode* t = (struct inode*)buf + inum%IPB;
+    printf("inode_manager::getatstr\n");
+    printf("attr->mode %o \n", t->mode);
+    printf("attr.u_id %d \n", t->uid);
+    printf("attr.g_id %d \n", t->gid);   
 	a.type = t->type;
-	a.atime = t->atime; 
-	a.mtime = t->mtime;
-	a.ctime = t->ctime;
+	// a.atime = t->atime; 
+	// a.mtime = t->mtime;
+	// a.ctime = t->ctime;
     a.mode = t->mode;
 	a.size = t->size;
     a.uid = t->uid;
@@ -587,10 +591,16 @@ void inode_manager::setattr(uint32_t inum, extent_protocol::attr &a) {
     }
 
     // get inode, can not use get_inode(), the test program will crash because it may return NULL.
+    printf("inode_manager::setattr \n");
+    printf("attr->mode %o \n", a.mode);
+    printf("attr.u_id %d \n", a.uid);
+    printf("attr.g_id %d \n", a.gid);
     char buf[BLOCK_SIZE];
     bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
     struct inode* t = (struct inode*)buf + inum%IPB;
     t->mode = a.mode;
+    t->uid = a.uid;
+    t->gid = a.gid;
     put_inode(inum, t);
 }
 

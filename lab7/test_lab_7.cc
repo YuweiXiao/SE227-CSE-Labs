@@ -50,6 +50,7 @@ int chown1(char* d, const char* f, unsigned int u_id, unsigned int g_id)
 {
 	char name[512];
 	sprintf(name, "%s/%s", d, f);
+    // printf("in change own1, uid: %d, gid: %d\n", u_id, g_id);
 	errno = 0;
 	if (chown(name, u_id, g_id) != 0) {
 		return errno;
@@ -546,12 +547,15 @@ int writedirm(char *d, const char* d1, const char* file, const char* dir)
 	char n1[512], n2[512];
 	sprintf(n1, "%s/%s/%s", d, d1, file);
 	sprintf(n2, "%s/%s/%s", d, d1, dir);
+    // printf("create:%s\n", n1);
 	if (creat(n1, 0666) < 0) {
 		return errno;
 	}
+    // printf("create:%s\n", n2);
 	if (mkdir(n2, 0777) < 0) {
 		return errno;
 	}
+    // printf("ok\n");
 	return 0;
 }
 
@@ -600,7 +604,7 @@ main(int argc, char *argv[])
 	int ret;
 	int certnum, filenum, dirnum;
 
-    umask(0);
+	umask(0);
 
 	certnum = 0;
 	filenum = 0;
@@ -624,7 +628,7 @@ main(int argc, char *argv[])
 	printf("Legal certificate:");
 	st = verify("./cert/root.pem", &uid);
 	if (st != yfs_client::OK || uid != 0) {
-		printf("ERROR1%d\n", uid);
+		printf("ERROR\n");
 	} else {
 		st = verify("./cert/user1.pem", &uid);
 		if (st != yfs_client::OK || uid != 1003) {
@@ -703,16 +707,19 @@ main(int argc, char *argv[])
 	if ( (ret = writem(d1, "a", 64, '1')) != 0) {
 		goto write_error;
 	}
+    printf("h1\n");
 	if ( (ret = writem(d1, "r", 64, '1')) != EACCES) {
-        printf("ret%d\n", ret);
 		goto write_error;
 	}
+    printf("h2\n");
 	if ( (ret = writem(d1, "w", 64, '1')) != 0) {
 		goto write_error;
 	}
+    printf("h3\n");
 	if ( (ret = writem(d1, "n", 64, '1')) != EACCES) {
 		goto write_error;
 	}
+    printf("h4\n");
 	printf("  owner write PASSED\n");
 	filenum ++;
 	goto write_ok;
@@ -729,6 +736,7 @@ write_ok:
 	if ( (ret = readm(d1, "r")) != 0) {
 		goto read_error;
 	}
+
 	if ( (ret = readm(d1, "n")) != EACCES) {
 		goto read_error;
 	}
@@ -827,23 +835,18 @@ reado_ok:
 	if (readm(d1, "ch") != 0) {
 		goto chmod_error;
 	}
-    printf("here1\n");
 	if (writem(d1, "ch", 64, '1') != 0) {
 		goto chmod_error;
 	}
-    printf("here2\n");
 	if ((ret = chmod1(d1, "ch", 0420)) != 0) {
 		goto chmod_error;
 	}
-    printf("here3\n");
 	if ((ret=writem(d1, "ch", 64, '1')) != EACCES) {
 		goto chmod_error;
 	}
-    printf("here4\n");
 	if ((ret=readm(d2, "ch")) != EACCES) {
 		goto chmod_error;
 	}
-    printf("here5\n");
 	if ((ret=readm(d3, "ch")) != EACCES) {
 		goto chmod_error;
 	}
@@ -888,15 +891,19 @@ chmodo_ok:
 	if (chown1(d0, "co", 1004,1005) != 0) {
 		goto chown_error;
 	}
+    printf("here1\n");
 	if ((ret=writem(d2, "co", 64, '1')) != 0){
 		goto chown_error;
 	}
+    printf("here2\n");
 	if ((ret=writem(d3, "co", 64, '1')) != EACCES) {
 		goto chown_error;
 	}
+    printf("here3\n");
 	if ((ret=readm(d1, "co")) != EACCES) {
 		goto chown_error;
 	}
+    printf("here4\n");
 	printf("  root chown PASSED\n");
 	filenum++;
 	goto chown_ok;
@@ -1017,7 +1024,7 @@ writed_ok:
 	dirnum ++;
 	goto readd_ok;
 readd_error:
-	printf(" owner read OK\n");
+	printf(" owner read ERROR\n");
 readd_ok:
 
 	
@@ -1050,17 +1057,17 @@ writedg_ok:
 	dirnum ++;
 	goto readdg_ok;
 readdg_error:
-	printf(" group read OK\n");
+	printf(" group read ERROR\n");
 readdg_ok:
 
 
-	if (writedirm(d1, "doa", "file7", "dir7") != 0) {
+	if (writedirm(d3, "doa", "file7", "dir7") != 0) {
 		goto writedo_error;
 	}
-	if (writedirm(d1, "dor", "file8", "dir8") != EACCES) {
+	if (writedirm(d3, "dor", "file8", "dir8") != EACCES) {
 		goto writedo_error;
 	}
-	if (writedirm(d1, "dow", "file9", "dir9") != 0) {
+	if (writedirm(d3, "dow", "file9", "dir9") != 0) {
 		goto writedo_error;
 	}
 	printf("  other write PASSED\n");
@@ -1070,20 +1077,20 @@ writedo_error:
 	printf("  other write ERROR\n");
 writedo_ok:
   
-	if (readdirm(d1, "doa") != 0) {
+	if (readdirm(d3, "doa") != 0) {
 		goto readdo_error;
 	}
-	if (readdirm(d1, "dor") != 0) {
+	if (readdirm(d3, "dor") != 0) {
 		goto readdo_error;
 	}
-	if (readdirm(d1, "dow") != EACCES) {
+	if (readdirm(d3, "dow") != EACCES) {
 		goto readdo_error;
 	}
 	printf(" other read PASSED\n");
 	dirnum ++;
 	goto readdo_ok;
 readdo_error:
-	printf(" other read OK\n");
+	printf(" other read ERROR\n");
 readdo_ok:
 
 	printf("Score: %d/60\n",dirnum * 10);

@@ -66,7 +66,7 @@ class yfs_client {
   void appendDirContent(std::string &, const char *, inum &);
   void appendDirContent(std::string &, std::string &, inum &);
   int _lookup(inum, const char *, bool &, inum &);
-  int _readdir(inum, std::list<dirent> &);
+  int _readdir(inum, std::list<dirent> &, bool);
   int _getfile(inum, fileinfo &);  
   
  public:

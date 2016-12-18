@@ -28,9 +28,9 @@ class extent_protocol {
 
   struct attr {
     uint32_t type;
-    unsigned int atime;
-    unsigned int mtime;
-    unsigned int ctime;
+    // unsigned int atime;
+    // unsigned int mtime;
+    // unsigned int ctime;
     unsigned int size;
     mode_t mode;
     unsigned short uid;
@@ -99,13 +99,14 @@ inline unmarshall &
 operator>>(unmarshall &u, extent_protocol::attr &a)
 {
   u >> a.type;
-  u >> a.atime;
-  u >> a.mtime;
-  u >> a.ctime;
+  // u >> a.atime;
+  // u >> a.mtime;
+  // u >> a.ctime;
   u >> a.size;
   u >> a.uid;
   u >> a.gid;
   u >> a.mode;
+  printf("unmarshall >> extent_protocol::mode:%o\n", a.mode);
   return u;
 }
 
@@ -113,13 +114,14 @@ inline marshall &
 operator<<(marshall &m, extent_protocol::attr a)
 {
   m << a.type;
-  m << a.atime;
-  m << a.mtime;
-  m << a.ctime;
+  // m << a.atime;
+  // m << a.mtime;
+  // m << a.ctime;
   m << a.size;
   m << a.uid;
   m << a.gid;
   m << a.mode;
+  printf("marshall << extent_protocol::mode:%o\n", a.mode);
   return m;
 }
 

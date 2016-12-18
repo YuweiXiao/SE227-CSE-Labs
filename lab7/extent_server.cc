@@ -23,12 +23,12 @@ extent_server::extent_server() {
 
 int extent_server::create(uint32_t type, extent_protocol::AccessControl ac, mode_t mode, extent_protocol::extentid_t &id) {
   printf("extent_server: create inode\n");
-  printf("%d - %d\n", ac.uid, ac.gid);
+  printf("mode:%o, uid:%d - gid%d\n", mode, ac.uid, ac.gid);
   id = im->alloc_inode(type, ac.uid, ac.gid, mode);
   return extent_protocol::OK;
 }
 
-int extent_server::setattr(extent_protocol::extentid_t id, extent_protocol::attr &a) {
+int extent_server::setattr(extent_protocol::attr a, extent_protocol::extentid_t id, int &t) {
   im->setattr(id, a);
   return extent_protocol::OK;
 }

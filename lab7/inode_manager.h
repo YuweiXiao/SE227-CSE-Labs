@@ -99,7 +99,7 @@ class inode_manager {
 
  public:
   inode_manager();
-  uint32_t alloc_inode(uint32_t type, unsigned short uid = 0, unsigned short gid = 777, mode_t mode = 666);
+  uint32_t alloc_inode(uint32_t type, unsigned short uid = 0, unsigned short gid = 0, mode_t mode = 0777);
   void free_inode(uint32_t inum);
   void read_file(uint32_t inum, char **buf, int *size);
   void write_file(uint32_t inum, const char *buf, int size);

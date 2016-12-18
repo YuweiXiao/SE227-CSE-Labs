@@ -367,7 +367,7 @@ fuseserver_getattr(fuse_req_t req, fuse_ino_t ino,
 
     ret = getattr(inum, st);
     if(ret != yfs_client::OK){
-		if (ret == extent_protocol::NOPEM) {
+		if (ret == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		} else {
         	fuse_reply_err(req, ENOENT);
@@ -397,8 +397,7 @@ void
 fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
         int to_set, struct fuse_file_info *fi)
 {
-    //TODO set time and other attribute
-    printf("fuseserver_setattr 0x%x\n", to_set);
+    printf("fuseserver_setattr 0x%x, inode:%u", to_set, ino);
 	printf("attr->mode %o\n", attr->st_mode);
 	printf("attr->u_id %d\n", attr->st_uid);
 	printf("attr->g_id %d\n", attr->st_gid);
@@ -407,18 +406,28 @@ fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
 
 	if (LAB6_ATTR_MASK & to_set) {
         struct stat st;
+        getattr(ino, st);
 		yfs_client::filestat fst;
-		fst.mode = attr->st_mode;
-		fst.uid = attr->st_uid;
-		fst.gid = attr->st_gid;
-		fst.size = attr->st_size;
+		fst.mode = st.st_mode;
+		fst.uid = st.st_uid;
+		fst.gid = st.st_gid;
+		fst.size = st.st_size;
+
+        if(to_set & FUSE_SET_ATTR_GID)
+            fst.gid = attr->st_gid;
+        if(to_set & FUSE_SET_ATTR_UID)
+            fst.uid = attr->st_uid;
+        if(to_set & FUSE_SET_ATTR_MODE)
+            fst.mode = attr->st_mode;
+        if(to_set & FUSE_SET_ATTR_SIZE)
+            fst.size = attr->st_size;
 
 #if 1
         // Change the above line to "#if 1", and your code goes here
         // Note: fill st using getattr before fuse_reply_attr
         ret = yfs->setattr(ino, fst, to_set);
 		if (ret != yfs_client::OK) {
-			if (ret == extent_protocol::NOPEM) {
+			if (ret == yfs_client::NOPEM) {
 				fuse_reply_err(req, EACCES);
 			} else {
         		fuse_reply_err(req, ENOENT);
@@ -460,7 +469,7 @@ fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
     if ((r = yfs->read(ino, size, off, buf)) == yfs_client::OK) {
         fuse_reply_buf(req, buf.data(), buf.size());    
     } else {
-		if (r == extent_protocol::NOPEM) {
+		if (r == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		} else {
         	fuse_reply_err(req, ENOENT);
@@ -506,7 +515,7 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
         // yfs_log.write(content);
         fuse_reply_write(req, size);
     } else {
-		if (r == extent_protocol::NOPEM) {
+		if (r == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		} else {
         	fuse_reply_err(req, ENOENT);
@@ -544,7 +553,7 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
     e->attr_timeout = 0.0;
     e->entry_timeout = 0.0;
     e->generation = 0;
-    printf("in fuseserver_createhelper::mode:%d\n", mode);
+    printf("in fuseserver_createhelper::mode:%o:name:%s\n", mode, name);
     // yfs_log.createLOG(parent, name, mode, type);
     yfs_client::inum inum;
     if ( type == extent_protocol::T_FILE )
@@ -563,16 +572,17 @@ void
 fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
         mode_t mode, struct fuse_file_info *fi)
 {
-    printf("in fuseserver_create:%o\n", (unsigned long)mode);
+    printf("in fuseserver_create:%o, name:%s\n", mode, name);
     struct fuse_entry_param e;
     yfs_client::status ret;
     if( (ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_FILE)) == yfs_client::OK ) {
         fuse_reply_create(req, &e, fi);
         printf("OK: create returns.\n");
     } else {
+        printf("create not ok %d , exist:%d\n", ret, yfs_client::EXIST);
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
-        } else if (ret == extent_protocol::NOPEM) {
+        } else if (ret == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else{
             fuse_reply_err(req, ENOENT);
@@ -609,7 +619,7 @@ void fuseserver_mknod( fuse_req_t req, fuse_ino_t parent,
     } else {
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
-        }else if (ret == extent_protocol::NOPEM) {
+        }else if (ret == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else{
             fuse_reply_err(req, ENOENT);
@@ -636,7 +646,7 @@ fuseserver_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
      yfs_client::inum ino;
      ret = yfs->lookup(parent, name, found, ino);
 
-	if (ret == extent_protocol::NOPEM){
+	if (ret == yfs_client::NOPEM){
 		fuse_reply_err(req, EACCES);
 		return;
 	}
@@ -704,7 +714,12 @@ fuseserver_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
     memset(&b, 0, sizeof(b));
 
     std::list<yfs_client::dirent> entries;
-    yfs->readdir(inum, entries);
+    int ret = yfs->readdir(inum, entries);
+    if(ret == yfs_client::NOPEM) {
+        free(b.p);
+        fuse_reply_err(req, EACCES);
+        return;
+    }
     for (std::list<yfs_client::dirent>::iterator it = entries.begin(); it != entries.end(); ++it) {
         dirbuf_add(&b, it->name.c_str(), (fuse_ino_t) it->inum);
     }
@@ -752,7 +767,7 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     } else {
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
-        } else if (ret == extent_protocol::NOPEM) {
+        } else if (ret == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else {
             fuse_reply_err(req, ENOENT);
@@ -792,7 +807,7 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
     } else {
         if (r == yfs_client::NOENT) {
             fuse_reply_err(req, ENOENT);
-        } else if (r == extent_protocol::NOPEM) {
+        } else if (r == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else{
             fuse_reply_err(req, ENOTEMPTY);
