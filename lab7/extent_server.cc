@@ -9,17 +9,27 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-extent_server::extent_server() 
-{
+extent_server::extent_server() {
   im = new inode_manager();
 }
 
-int extent_server::create(uint32_t type, extent_protocol::extentid_t &id)
-{
-  // alloc a new inode and return inum
-  printf("extent_server: create inode\n");
-  id = im->alloc_inode(type);
+// int extent_server::init_extent_server(unsigned short uid, unsigned short gid, extent_protocol::extentid_t &id) 
+// {
+//   printf("in init extent server\n");
+//   this->uid = uid;
+//   this->gid = gid;
+//   return extent_protocol::OK;
+// }
 
+int extent_server::create(uint32_t type, extent_protocol::AccessControl ac, mode_t mode, extent_protocol::extentid_t &id) {
+  printf("extent_server: create inode\n");
+  printf("%d - %d\n", ac.uid, ac.gid);
+  id = im->alloc_inode(type, ac.uid, ac.gid, mode);
+  return extent_protocol::OK;
+}
+
+int extent_server::setattr(extent_protocol::extentid_t id, extent_protocol::attr &a) {
+  im->setattr(id, a);
   return extent_protocol::OK;
 }
 
@@ -63,6 +73,7 @@ int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr
   memset(&attr, 0, sizeof(attr));
   im->getattr(id, attr);
   a = attr;
+  printf("uid:%d - gid:%d\n", a.uid, a.gid);
 
   return extent_protocol::OK;
 }

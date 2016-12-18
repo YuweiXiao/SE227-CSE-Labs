@@ -83,6 +83,9 @@ typedef struct inode {
   unsigned int atime;
   unsigned int mtime;
   unsigned int ctime;
+  mode_t mode;
+  unsigned short uid;
+  unsigned short gid;
   blockid_t blocks[NDIRECT+1];   // Data block addresses
 } inode_t;
 
@@ -96,12 +99,13 @@ class inode_manager {
 
  public:
   inode_manager();
-  uint32_t alloc_inode(uint32_t type);
+  uint32_t alloc_inode(uint32_t type, unsigned short uid = 0, unsigned short gid = 777, mode_t mode = 666);
   void free_inode(uint32_t inum);
   void read_file(uint32_t inum, char **buf, int *size);
   void write_file(uint32_t inum, const char *buf, int size);
   void remove_file(uint32_t inum);
   void getattr(uint32_t inum, extent_protocol::attr &a);
+  void setattr(uint32_t inum, extent_protocol::attr &a);
 };
 
 #endif

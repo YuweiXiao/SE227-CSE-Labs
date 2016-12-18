@@ -17,6 +17,9 @@
 class yfs_client {
   extent_client *ec;
   lock_client *lc;
+  std::string username;
+  unsigned short uid;
+  unsigned short gid;
 
  public:
 
@@ -29,9 +32,9 @@ class yfs_client {
 
   struct filestat {
   	unsigned long long size;
-	unsigned long mode;
-	unsigned short uid;
-	unsigned short gid;
+  	unsigned long mode;
+  	unsigned short uid;
+  	unsigned short gid;
   };
 
   struct fileinfo {
@@ -39,17 +42,17 @@ class yfs_client {
     unsigned long atime;
     unsigned long mtime;
     unsigned long ctime;
-	unsigned long mode;
-	unsigned short uid;
-	unsigned short gid;
+  	unsigned long mode;
+  	unsigned short uid;
+  	unsigned short gid;
   };
   struct dirinfo {
     unsigned long atime;
     unsigned long mtime;
     unsigned long ctime;
-	unsigned long mode;
-	unsigned short uid;
-	unsigned short gid;
+  	unsigned long mode;
+  	unsigned short uid;
+  	unsigned short gid;
   };
 
   struct dirent {
@@ -76,7 +79,7 @@ class yfs_client {
   int getfile(inum, fileinfo &);
   int getdir(inum, dirinfo &);
 
-  int setattr(inum, filestat, unsigned long);
+  int setattr(inum, filestat, int );
   int setattr_atime(inum, unsigned long long);
   int lookup(inum, const char *, bool &, inum &);
   int create(inum, const char *, mode_t, inum &);

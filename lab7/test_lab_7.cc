@@ -599,6 +599,9 @@ main(int argc, char *argv[])
 	unsigned short uid;
 	int ret;
 	int certnum, filenum, dirnum;
+
+    umask(0);
+
 	certnum = 0;
 	filenum = 0;
 	dirnum = 0;
@@ -621,7 +624,7 @@ main(int argc, char *argv[])
 	printf("Legal certificate:");
 	st = verify("./cert/root.pem", &uid);
 	if (st != yfs_client::OK || uid != 0) {
-		printf("ERROR\n");
+		printf("ERROR1%d\n", uid);
 	} else {
 		st = verify("./cert/user1.pem", &uid);
 		if (st != yfs_client::OK || uid != 1003) {
@@ -700,11 +703,10 @@ main(int argc, char *argv[])
 	if ( (ret = writem(d1, "a", 64, '1')) != 0) {
 		goto write_error;
 	}
-
 	if ( (ret = writem(d1, "r", 64, '1')) != EACCES) {
+        printf("ret%d\n", ret);
 		goto write_error;
 	}
-
 	if ( (ret = writem(d1, "w", 64, '1')) != 0) {
 		goto write_error;
 	}
@@ -727,7 +729,6 @@ write_ok:
 	if ( (ret = readm(d1, "r")) != 0) {
 		goto read_error;
 	}
-
 	if ( (ret = readm(d1, "n")) != EACCES) {
 		goto read_error;
 	}
@@ -826,19 +827,23 @@ reado_ok:
 	if (readm(d1, "ch") != 0) {
 		goto chmod_error;
 	}
+    printf("here1\n");
 	if (writem(d1, "ch", 64, '1') != 0) {
 		goto chmod_error;
 	}
+    printf("here2\n");
 	if ((ret = chmod1(d1, "ch", 0420)) != 0) {
 		goto chmod_error;
 	}
-
+    printf("here3\n");
 	if ((ret=writem(d1, "ch", 64, '1')) != EACCES) {
 		goto chmod_error;
 	}
+    printf("here4\n");
 	if ((ret=readm(d2, "ch")) != EACCES) {
 		goto chmod_error;
 	}
+    printf("here5\n");
 	if ((ret=readm(d3, "ch")) != EACCES) {
 		goto chmod_error;
 	}

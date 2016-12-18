@@ -255,7 +255,7 @@ inode_manager::getTime()
 /* Create a new file.
  * Return its inum. */
 uint32_t
-inode_manager::alloc_inode(uint32_t type)
+inode_manager::alloc_inode(uint32_t type, unsigned short uid, unsigned short gid, mode_t mode)
 {
 	/* 
 	 * your lab1 code goes here.
@@ -279,6 +279,9 @@ inode_manager::alloc_inode(uint32_t type)
 			ino_disk->mtime = ino_disk->ctime;
 			ino_disk->atime = ino_disk->ctime;
 			ino_disk->type = type;
+            ino_disk->uid = uid;
+            ino_disk->gid = gid;
+            ino_disk->mode = mode;
 			bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
 			return inum;
 		}
@@ -571,7 +574,24 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
 	a.atime = t->atime; 
 	a.mtime = t->mtime;
 	a.ctime = t->ctime;
+    a.mode = t->mode;
 	a.size = t->size;
+    a.uid = t->uid;
+    a.gid = t->gid;
+}
+
+void inode_manager::setattr(uint32_t inum, extent_protocol::attr &a) {
+    if(inum < 0 || inum > INODE_NUM) {
+        printf("inode_manager::getattr:: inum is out of range: %u\n", inum);
+        return;
+    }
+
+    // get inode, can not use get_inode(), the test program will crash because it may return NULL.
+    char buf[BLOCK_SIZE];
+    bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
+    struct inode* t = (struct inode*)buf + inum%IPB;
+    t->mode = a.mode;
+    put_inode(inum, t);
 }
 
 void

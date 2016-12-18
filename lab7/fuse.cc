@@ -367,7 +367,7 @@ fuseserver_getattr(fuse_req_t req, fuse_ino_t ino,
 
     ret = getattr(inum, st);
     if(ret != yfs_client::OK){
-		if (ret == yfs_client::NOPEM) {
+		if (ret == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		} else {
         	fuse_reply_err(req, ENOENT);
@@ -418,7 +418,7 @@ fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
         // Note: fill st using getattr before fuse_reply_attr
         ret = yfs->setattr(ino, fst, to_set);
 		if (ret != yfs_client::OK) {
-			if (ret == yfs_client::NOPEM) {
+			if (ret == extent_protocol::NOPEM) {
 				fuse_reply_err(req, EACCES);
 			} else {
         		fuse_reply_err(req, ENOENT);
@@ -460,7 +460,7 @@ fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
     if ((r = yfs->read(ino, size, off, buf)) == yfs_client::OK) {
         fuse_reply_buf(req, buf.data(), buf.size());    
     } else {
-		if (r == yfs_client::NOPEM) {
+		if (r == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		} else {
         	fuse_reply_err(req, ENOENT);
@@ -495,18 +495,18 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
 #if 1
     // Change the above line to "#if 1", and your code goes here
     int r;
-    yfs_log.writeLOG(ino, buf, size, off);
-    std::string origin;
-    yfs->read(ino, -1, 0, origin);
+    // yfs_log.writeLOG(ino, buf, size, off);
+    // std::string origin;
+    // yfs->read(ino, -1, 0, origin);
     // printf("in fuseserver_write:inum:%u, size %llu, off%llu\n", ino, size, off);
     if ((r = yfs->write(ino, size, off, buf, size)) == yfs_client::OK) {
-        std::string content;
-        yfs->read(ino, -1, 0, content);
-        yfs_log.write(origin);
-        yfs_log.write(content);
+        // std::string content;
+        // yfs->read(ino, -1, 0, content);
+        // yfs_log.write(origin);
+        // yfs_log.write(content);
         fuse_reply_write(req, size);
     } else {
-		if (r == yfs_client::NOPEM) {
+		if (r == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		} else {
         	fuse_reply_err(req, ENOENT);
@@ -544,8 +544,8 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
     e->attr_timeout = 0.0;
     e->entry_timeout = 0.0;
     e->generation = 0;
-
-    yfs_log.createLOG(parent, name, mode, type);
+    printf("in fuseserver_createhelper::mode:%d\n", mode);
+    // yfs_log.createLOG(parent, name, mode, type);
     yfs_client::inum inum;
     if ( type == extent_protocol::T_FILE )
 		ret = yfs->create(parent, name, mode, inum);
@@ -553,7 +553,7 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
 		ret = yfs->mkdir(parent, name, mode, inum);
     if (ret != yfs_client::OK)
         return ret;
-    
+
     e->ino = inum;
     ret = getattr(inum, e->attr);
     return ret;
@@ -563,6 +563,7 @@ void
 fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
         mode_t mode, struct fuse_file_info *fi)
 {
+    printf("in fuseserver_create:%o\n", (unsigned long)mode);
     struct fuse_entry_param e;
     yfs_client::status ret;
     if( (ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_FILE)) == yfs_client::OK ) {
@@ -571,7 +572,7 @@ fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     } else {
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
-        } else if (ret == yfs_client::NOPEM) {
+        } else if (ret == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else{
             fuse_reply_err(req, ENOENT);
@@ -582,7 +583,7 @@ fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
 void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char *name) {
     printf("fuseserver::creating symbolic link : %s filename:%s\n", link, name);
     struct fuse_entry_param e;
-    yfs_client::status r = fuseserver_createhelper(parent, name, S_IFLNK, &e, extent_protocol::T_FILE);
+    yfs_client::status r = fuseserver_createhelper(parent, name, S_IFLNK | 0777, &e, extent_protocol::T_FILE);
     if( r == yfs_client::OK ) {
         size_t writebytes = strlen(name);
         r = yfs->write(e.ino, writebytes, 0, link, writebytes);
@@ -608,7 +609,7 @@ void fuseserver_mknod( fuse_req_t req, fuse_ino_t parent,
     } else {
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
-        }else if (ret == yfs_client::NOPEM) {
+        }else if (ret == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else{
             fuse_reply_err(req, ENOENT);
@@ -635,7 +636,7 @@ fuseserver_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
      yfs_client::inum ino;
      ret = yfs->lookup(parent, name, found, ino);
 
-	if (ret == yfs_client::NOPEM){
+	if (ret == extent_protocol::NOPEM){
 		fuse_reply_err(req, EACCES);
 		return;
 	}
@@ -745,12 +746,13 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
 #if 1
     // Change the above line to "#if 1", and your code goes here
     yfs_client::status ret;
+    printf("in fuseserver_create_dir:%o\n", mode);
     if (( ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_DIR)) == yfs_client::OK) {
         fuse_reply_entry(req, &e);    
     } else {
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
-        } else if (ret == yfs_client::NOPEM) {
+        } else if (ret == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else {
             fuse_reply_err(req, ENOENT);
@@ -783,14 +785,14 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
     else type = extent_protocol::T_SYMLNK;
     std::string content;
     yfs->read(ino, -1, 0, content);
-    yfs_log.unlinkLOG(parent, name, type, content);
+    // yfs_log.unlinkLOG(parent, name, type, content);
 
     if ((r = yfs->unlink(parent, name)) == yfs_client::OK) {        
         fuse_reply_err(req, 0);
     } else {
         if (r == yfs_client::NOENT) {
             fuse_reply_err(req, ENOENT);
-        } else if (r == yfs_client::NOPEM) {
+        } else if (r == extent_protocol::NOPEM) {
 			fuse_reply_err(req, EACCES);
 		}else{
             fuse_reply_err(req, ENOTEMPTY);
@@ -881,9 +883,10 @@ main(int argc, char *argv[])
 #endif
 
     // everyone can play, why not?
-    //fuse_argv[fuse_argc++] = "-o";
-    //fuse_argv[fuse_argc++] = "allow_other";
-
+    // fuse_argv[fuse_argc++] = "-o";
+    // fuse_argv[fuse_argc++] = "allow_other";
+    fuse_argv[fuse_argc++] = "-o";
+    fuse_argv[fuse_argc++] = "debug";
     fuse_argv[fuse_argc++] = mountpoint;
     fuse_argv[fuse_argc++] = "-d";
 

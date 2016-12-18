@@ -19,13 +19,18 @@ class extent_server {
 #endif
   inode_manager *im;
 
+private:
+  // unsigned short uid;
+  // unsigned short gid;
+
  public:
   extent_server();
-
-  int create(uint32_t type, extent_protocol::extentid_t &id);
+  // int init_extent_server(unsigned short uid, unsigned short gid, extent_protocol::extentid_t &id);
+  int create(uint32_t type, extent_protocol::AccessControl ac, mode_t mode, extent_protocol::extentid_t &id);
   int put(extent_protocol::extentid_t id, std::string, int &);
   int get(extent_protocol::extentid_t id, std::string &);
   int getattr(extent_protocol::extentid_t id, extent_protocol::attr &);
+  int setattr(extent_protocol::extentid_t id, extent_protocol::attr &);
   int remove(extent_protocol::extentid_t id, int &);
 };
 

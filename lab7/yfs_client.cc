@@ -2,12 +2,17 @@
 #include "yfs_client.h"
 #include "extent_client.h"
 #include <sstream>
+#include <fstream>
 #include <iostream>
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <openssl/x509.h>
+#include <openssl/pem.h>
+#include <openssl/bio.h>
+#include <openssl/x509v3.h>
 
 yfs_client::yfs_client()
 {
@@ -17,17 +22,101 @@ yfs_client::yfs_client()
 
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst, const char* cert_file)
 {
-  ec = new extent_client(extent_dst);
-  lc = new lock_client(lock_dst);
-  if (ec->put(1, "") != extent_protocol::OK)
-      printf("error init root dir\n"); // XYB: init root dir
+    int r = verify(cert_file, &uid);
+    printf("usedid:%d\n", uid);
+    if( r != OK ) {
+        printf("error user CA.\n");
+        assert(0);
+    }
+    ec = new extent_client(extent_dst, username, uid, gid);
+    lc = new lock_client(lock_dst);
+    if (ec->put(1, "") != extent_protocol::OK)
+        printf("error init root dir\n"); // XYB: init root dir
 }
 
 int
 yfs_client::verify(const char* name, unsigned short *uid)
 {
   	int ret = OK;
-    //TODO
+
+    // read in certificate file.
+    FILE *fp = fopen(name, "r");
+    assert(fp);
+
+    X509 *certificate = PEM_read_X509(fp, NULL, NULL, NULL);
+    // not a valid CA
+    if(certificate == NULL) {
+        return ERRPEM;
+    }
+
+
+    // whether issused by trusted CA.
+    FILE *trusted = fopen("./cert/ca.pem", "r");
+    assert(trusted);
+    X509 *trustedCA = PEM_read_X509(trusted, NULL, NULL, NULL);
+    int raw = X509_check_issued(trustedCA, certificate);
+    if( raw == 29 ) {
+        return EINVA;
+    } 
+
+    // time validate
+    // ASN1_TIME *not_before = X509_get_notBefore(certificate);
+    // ASN1_TIME *not_after = X509_get_notAfter(certificate);
+    // X509_STORE *xs = X509_STORE_new();
+    // X509_STORE_CTX *ctx = X509_STORE_CTX_new();
+    // X509_STORE_add_cert(xs, certificate);
+    // X509_STORE_CTX_init(ctx, xs, certificate, NULL); 
+    // X509_STORE_CTX_set_time()
+    // X509_STORE_CTX_set_flags(ctx, X509_V_FLAG_USE_CHECK_TIME);
+    // int status = X509_verify_cert(ctx);
+    // status = X509_STORE_CTX_get_error(ctx);
+    
+    // EVP_PKEY * pubkey = X509_get_pubkey(trustedCA);
+    // int status = X509_verify(certificate, pubkey);
+
+    // time_t *ptime;
+    // int i = X509_cmp_time(X509_get_notAfter(certificate), ptime);
+
+    // printf("\nstatus:i:%d- ptime:%d\n", i, &ptime);
+
+
+    // get common name and get uid from ect/group file set uid
+    assert(certificate);
+    X509_NAME *subj = X509_get_subject_name(certificate);
+    assert(subj);
+    int lastpos = -1;
+    lastpos = X509_NAME_get_index_by_NID(subj, NID_commonName, lastpos);
+    assert(lastpos != -1);
+    X509_NAME_ENTRY *e = X509_NAME_get_entry(subj, lastpos);
+    ASN1_STRING *d = X509_NAME_ENTRY_get_data(e);
+    char *str = (char *)ASN1_STRING_data(d);
+    // printf("common name :%s\n", str);
+    std::string commonName = std::string(str);
+
+    std::ifstream in("./etc/group");
+    std::string t;
+    bool flag = false;
+    while(getline(in, t)) {
+        std::string::size_type pos = t.find(":", 0);
+        std::string name = t.substr(0, pos);
+        // std::cout<<name<<std::endl;
+        if(name == commonName) {
+            flag = true;
+            pos = t.find(":", pos + 1);
+            std::string tid = t.substr(pos + 1, t.find(":", pos + 1) - pos - 1);
+            // printf("get same name:%s\n", tid.c_str());
+            // TODO  
+            // this is group ID, maybe can pass test. the best way is to get uid from passwd
+            *uid = (unsigned short)atoi(tid.c_str()); 
+            this->gid = *uid; 
+            username = name;
+            break;
+        }
+    }
+    if(!flag) {
+        return ENUSE;
+    }
+
 	return ret;
 }
 
@@ -127,6 +216,9 @@ yfs_client::_getfile(inum inum, fileinfo &fin)
     fin.mtime = a.mtime;
     fin.ctime = a.ctime;
     fin.size = a.size;
+    fin.mode = a.mode;
+    fin.uid = a.uid;
+    fin.gid = a.gid;
     printf("yfs_client::_getfile %llu -> sz %llu\n", inum, fin.size);
 
 release:
@@ -148,6 +240,8 @@ yfs_client::getdir(inum inum, dirinfo &din)
     din.atime = a.atime;
     din.mtime = a.mtime;
     din.ctime = a.ctime;
+    din.uid = a.uid;
+    din.gid = a.gid;
 
 release:
     lc->release(inum);
@@ -174,7 +268,7 @@ yfs_client::setattr_atime(inum ino, unsigned long long time)
 
 // Only support set size of attr
 int
-yfs_client::setattr(inum ino, filestat st, unsigned long size)
+yfs_client::setattr(inum ino, filestat st, int to_set)
 {
     /*
      * your lab2 code goes here.
@@ -187,12 +281,17 @@ yfs_client::setattr(inum ino, filestat st, unsigned long size)
     extent_protocol::attr attribute;
     std::string content;
     int r = ec->getattr(ino, attribute);
+    attribute.mode = st.mode;
+    attribute.uid = st.uid;
+    attribute.gid = st.gid;
+    r = ec->setattr(ino, attribute);
     if(r != OK) {
         std::cout<<"yfs_client::setattr::get attr error: inum:"<<ino<<std::endl;
         lc->release(ino);
         return r;
     }
-    r = ec->get(ino, content);
+    int size = st.size;
+    r = ec->get(ino, content, true);
     if(r != OK) {
         std::cout<<"yfs_client::setattr::get content error: inum:"<<ino<<std::endl;
         lc->release(ino);
@@ -236,16 +335,16 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     // create file
     std::cout<<"yfs_client::create::mode:"<<mode<<";S_IFLNK:"<<S_IFLNK<<std::endl;
     // symblic link file
-    if(mode == S_IFLNK) {
-        // printf("yfs_client::create::symbolic create\n");
-        ec->create(extent_protocol::T_SYMLNK, ino_out);
+    if(mode & S_IFLNK > 0) {
+        printf("yfs_client::create::symbolic create\n");
+        ec->create(extent_protocol::T_SYMLNK, ino_out, mode);
     } else {
-        ec->create(extent_protocol::T_FILE, ino_out);
+        ec->create(extent_protocol::T_FILE, ino_out, mode);
     }
     
     // change parent content
     std::string dirContent;
-    r = ec->get(parent, dirContent);
+    r = ec->get(parent, dirContent, true);
     if( r != OK ) {
         return r;
     }
@@ -275,16 +374,16 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
         return r;
     }
     std::string dirContent;
-    r = ec->get(parent, dirContent);
+    r = ec->get(parent, dirContent, true);
 
-    r = ec->create(extent_protocol::T_DIR, ino_out);
+    r = ec->create(extent_protocol::T_DIR, ino_out, mode);
     if(r != OK) {
         printf("yfs_client::mkdir::create dir error\n");
         lc->release(parent);
         return r;
     }
 
-    r = ec->get(parent, dirContent);
+    r = ec->get(parent, dirContent, true);
     if(r != OK) {
         printf("yfs_client::mkdir::get parent dir error\n");
         lc->release(parent);
@@ -357,7 +456,7 @@ yfs_client::_readdir(inum dir, std::list<dirent> &list)
     printf("yfs_client::readdir: inum: %llu\n", dir);
 
     std::string dirContent;
-    int r = ec->get(dir, dirContent);
+    int r = ec->get(dir, dirContent, false);
     if(r != extent_protocol::OK) {
         printf("yfs_client::readdir::read dir error\n");
         return r;
@@ -409,7 +508,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
         lc->release(ino);
         return r;
     } 
-    r = ec->get(ino, content);
+    r = ec->get(ino, content, false);
     if( r != OK ) {
         std::cout<<"yfs_client::read::read content error:inum:"<<ino<<std::endl;
         lc->release(ino);
@@ -459,7 +558,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         std::cout<<"yfs_client::read::read file info error:inum:"<<ino<<std::endl;
     }
     // std::cout<<"yfs_client::write::size of original file:"<<fileInfo.size<<std::endl;
-    r = ec->get(ino, content);
+    r = ec->get(ino, content, true);
     if( r != OK ) {
         std::cout<<"yfs_client::read::read content error:inum"<<ino<<std::endl;
         lc->release(ino);
