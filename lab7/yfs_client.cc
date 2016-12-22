@@ -13,6 +13,8 @@
 #include <openssl/pem.h>
 #include <openssl/bio.h>
 #include <openssl/x509v3.h>
+#include <time.h>
+#include <openssl/asn1.h>
 
 static int returnError(int t) {
     switch(t) {
@@ -50,6 +52,35 @@ yfs_client::yfs_client(std::string extent_dst, std::string lock_dst, const char*
         printf("error init root dir\n"); // XYB: init root dir
 }
 
+static time_t ASN1_GetTimeT(ASN1_TIME* time)
+{
+    struct tm t;
+    const char* str = (const char*) time->data;
+    size_t i = 0;
+
+    memset(&t, 0, sizeof(t));
+
+    if (time->type == V_ASN1_UTCTIME) /* two digit year */
+    {
+        t.tm_year = (str[i++] - '0') * 10 + (str[++i] - '0');
+        if (t.tm_year < 70)
+        t.tm_year += 100;
+    }
+    else if (time->type == V_ASN1_GENERALIZEDTIME) /* four digit year */
+    {
+        t.tm_year = (str[i++] - '0') * 1000 + (str[++i] - '0') * 100 + (str[++i] - '0') * 10 + (str[++i] - '0');
+        t.tm_year -= 1900;
+    }
+    t.tm_mon = ((str[i++] - '0') * 10 + (str[++i] - '0')) - 1; // -1 since January is 0 not 1.
+    t.tm_mday = (str[i++] - '0') * 10 + (str[++i] - '0');
+    t.tm_hour = (str[i++] - '0') * 10 + (str[++i] - '0');
+    t.tm_min  = (str[i++] - '0') * 10 + (str[++i] - '0');
+    t.tm_sec  = (str[i++] - '0') * 10 + (str[++i] - '0');
+
+    /* Note: we did not adjust the time based on time zone information */
+    return mktime(&t);
+}
+
 int
 yfs_client::verify(const char* name, unsigned short *uid)
 {
@@ -65,24 +96,23 @@ yfs_client::verify(const char* name, unsigned short *uid)
         return ERRPEM;
     }
 
-
     // whether issused by trusted CA.
     FILE *trusted = fopen("./cert/ca.pem", "r");
     assert(trusted);
     X509 *trustedCA = PEM_read_X509(trusted, NULL, NULL, NULL);
+
     int raw = X509_check_issued(trustedCA, certificate);
     if( raw == 29 ) {
         return EINVA;
     } 
 
-    // time validate  TODO
     // ASN1_TIME *not_before = X509_get_notBefore(certificate);
     ASN1_TIME *not_after = X509_get_notAfter(certificate);
-    if(not_after->data[0] == '1') {
+    time_t after = ASN1_GetTimeT(not_after);
+    time_t now = time(NULL);
+    if(after < now) {
         return ECTIM;
     }
-    // time_t *ptime;
-    // int i = X509_cmp_time(X509_get_notAfter(certificate), ptime);
 
     // get common name and get uid from ect/group file set uid
     assert(certificate);

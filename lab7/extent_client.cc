@@ -70,6 +70,11 @@ extent_client::setattr(extent_protocol::extentid_t eid,
     printf("attr->mode %o to %o\n", attr.mode, a.mode);
     printf("attr.u_id %d to %d\n", attr.uid, a.uid);
     printf("attr.g_id %d to %d\n", attr.gid, a.gid);
+    if(attr.uid != a.uid || attr.gid != a.gid) {
+        if(ac.uid != 0) {
+            return extent_protocol::NOPEM;
+        }
+    }
     if(attr.uid != ac.uid && ac.uid != 0) {
         return extent_protocol::NOPEM;
     }     
@@ -120,7 +125,7 @@ extent_client::put(extent_protocol::extentid_t eid, std::string buf)
     printf("extent_client::put:gid-%d, uid:%d\n", attr.gid, attr.uid);
     int g = getGroup(attr.uid, attr.gid);
     printf("group number:%d\n", g);
-    printf("mode:%04o\n", attr.mode);
+    printf("mode:%o\n", attr.mode);
       // check permission
     int m = (attr.mode>>(g*3)) & (2);
     if( m == 0 ) {
@@ -167,6 +172,8 @@ int extent_client::getGroup(unsigned int uid, unsigned int gid) {
     while(getline(in, buf)) {
         extent_protocol::GroupInfo info = extent_protocol::parseGroup(buf);
         if(gid == info.gid) {
+            if(info.groupname == username)
+                return 1;
             for(int i = 0; i < info.members.size(); ++i) {
                 if(username == info.members[i]) {
                     return 1;
